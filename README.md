@@ -1,6 +1,6 @@
 # Jarvis 🛡️
 
-**Version 0.1.0** - _A terminal-based peer-to-peer end-to-end encrypted messenger._
+**Version 1.0.0** - _A terminal-based peer-to-peer end-to-end encrypted messenger._
 
 Created by **orpheus497**.
 
