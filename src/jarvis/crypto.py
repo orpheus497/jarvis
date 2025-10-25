@@ -428,8 +428,10 @@ def generate_group_uid() -> str:
     Similar to user UIDs but prefixed with 'g' to distinguish group identifiers.
     
     Format: g + 31 hexadecimal characters (e.g., "ga1b2c3d4e5f...")
+    Total length: 32 characters
     """
-    return 'g' + secrets.token_hex(15)  # 15 bytes + 'g' prefix = 31 chars
+    # Generate 16 bytes (32 hex chars), then take first 31
+    return 'g' + secrets.token_hex(16)[:31]
 
 
 def generate_secure_token(length: int = 32) -> str:

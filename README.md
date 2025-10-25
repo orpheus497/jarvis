@@ -481,6 +481,9 @@ This project was designed and originated by **orpheus497**.
 *   **Rich** - Terminal formatting (MIT License)  
     Created by Will McGugan
 
+*   **pyperclip** - Cross-platform clipboard support (MIT License)  
+    Created by Al Sweigart
+
 ### Standards
 
 *   **Keep a Changelog** - For standardized changelog format
