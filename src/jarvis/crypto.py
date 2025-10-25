@@ -428,8 +428,14 @@ def generate_group_uid() -> str:
     Similar to user UIDs but prefixed with 'g' to distinguish group identifiers.
     
     Format: g + 31 hexadecimal characters (e.g., "ga1b2c3d4e5f...")
+    Total length: 32 characters
+    
+    Note: Group UIDs have 124 bits of entropy (31 hex chars) compared to 128 bits
+    for user UIDs (32 hex chars). This is still cryptographically secure with
+    negligible collision probability (2^124 ≈ 2.13×10^37 possible values).
     """
-    return 'g' + secrets.token_hex(15)  # 15 bytes + 'g' prefix = 31 chars
+    # Generate 15 bytes (30 hex chars) + 1 additional hex digit = 31 hex chars (124 bits)
+    return 'g' + secrets.token_hex(15) + format(secrets.randbelow(16), 'x')
 
 
 def generate_secure_token(length: int = 32) -> str:
