@@ -197,6 +197,49 @@ class LoadIdentityScreen(ModalScreen):
         elif event.button.id == "cancel-btn":
             self.dismiss(None)
 
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle Enter key in input fields."""
+        if self.identity_manager.identity_exists():
+            # Load identity flow - only password input
+            if event.input.id == "password-input":
+                # Trigger load button
+                password = event.input.value
+                identity = self.identity_manager.load_identity(password)
+                if identity:
+                    self.identity = identity
+                    self.password = password
+                    self.dismiss((identity, password))
+                else:
+                    event.input.value = ""
+                    event.input.placeholder = "Incorrect password! Try again..."
+        else:
+            # Create identity flow - progress through fields
+            if event.input.id == "username-input":
+                # Move to password input
+                password_input = self.query_one("#password-input", Input)
+                password_input.focus()
+            elif event.input.id == "password-input":
+                # Move to port input
+                port_input = self.query_one("#port-input", Input)
+                port_input.focus()
+            elif event.input.id == "port-input":
+                # Submit the form
+                username_input = self.query_one("#username-input", Input)
+                password_input = self.query_one("#password-input", Input)
+                
+                username = username_input.value
+                password = password_input.value
+                try:
+                    port = int(event.input.value)
+                except ValueError:
+                    port = self.default_port
+                
+                if username and password:
+                    identity = self.identity_manager.create_identity(username, password, port)
+                    self.identity = identity
+                    self.password = password
+                    self.dismiss((identity, password))
+
     def action_cancel(self) -> None:
         """Cancel and close."""
         self.dismiss(None)
@@ -281,6 +324,54 @@ class AddContactScreen(ModalScreen):
 
         elif event.button.id == "cancel-btn":
             self.dismiss(None)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle Enter key in input fields."""
+        # Trigger add button when Enter is pressed on any input
+        link_code_input = self.query_one("#link-code-input", Input)
+        link_code = link_code_input.value.strip()
+
+        if link_code:
+            # Try to parse link code
+            data = LinkCodeGenerator.parse_link_code(link_code)
+            if data:
+                contact = Contact(
+                    uid=data['uid'],
+                    username=data['username'],
+                    public_key=data['public_key'],
+                    host=data['host'],
+                    port=data['port'],
+                    fingerprint=data['fingerprint']
+                )
+                if self.contact_manager.add_contact(contact):
+                    self.dismiss(contact)
+                else:
+                    link_code_input.placeholder = "Contact already exists!"
+                    link_code_input.value = ""
+            else:
+                link_code_input.placeholder = "Invalid link code!"
+                link_code_input.value = ""
+        else:
+            # Manual entry
+            username = self.query_one("#username-input", Input).value
+            uid = self.query_one("#uid-input", Input).value
+            public_key = self.query_one("#pubkey-input", Input).value
+            host = self.query_one("#host-input", Input).value
+            port_str = self.query_one("#port-input", Input).value
+
+            try:
+                port = int(port_str)
+                # Verify and create contact
+                fingerprint = crypto.generate_fingerprint(
+                    base64.b64decode(public_key)
+                )
+                contact = Contact(uid, username, public_key, host, port, fingerprint)
+                if self.contact_manager.add_contact(contact):
+                    self.dismiss(contact)
+                else:
+                    self.query_one("#username-input").placeholder = "Contact exists!"
+            except Exception as e:
+                self.query_one("#username-input").placeholder = "Invalid data!"
 
     def action_cancel(self) -> None:
         """Cancel and close."""
