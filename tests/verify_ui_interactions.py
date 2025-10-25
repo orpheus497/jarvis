@@ -14,17 +14,46 @@ import sys
 import os
 import tempfile
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../src'))
+# Import from installed package
+try:
+    from jarvis.ui import (
+        LinkCodeGenerator, JarvisApp, LoadIdentityScreen,
+        AddContactScreen, CreateGroupScreen, SettingsScreen
+    )
+    from jarvis.identity import IdentityManager
+    from jarvis.contact import ContactManager, Contact
+    from jarvis import crypto
+except ImportError:
+    # Fallback to local path for development
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../src'))
+    from jarvis.ui import (
+        LinkCodeGenerator, JarvisApp, LoadIdentityScreen,
+        AddContactScreen, CreateGroupScreen, SettingsScreen
+    )
+    from jarvis.identity import IdentityManager
+    from jarvis.contact import ContactManager, Contact
+    from jarvis import crypto
 
-from jarvis.ui import (
-    LinkCodeGenerator, JarvisApp, LoadIdentityScreen,
-    AddContactScreen, CreateGroupScreen, SettingsScreen
-)
-from jarvis.identity import IdentityManager
-from jarvis.contact import ContactManager, Contact
-from jarvis import crypto
 import base64
+
+# Constants
+BANNER_WIDTH = 58
+
+
+# Constants
+BANNER_WIDTH = 58
+
+
+def print_banner(message, style='double'):
+    """Print a formatted banner with the given message."""
+    if style == 'double':
+        print("\n╔" + "=" * BANNER_WIDTH + "╗")
+        print("║" + " " * BANNER_WIDTH + "║")
+        print("║" + message.center(BANNER_WIDTH) + "║")
+        print("║" + " " * BANNER_WIDTH + "║")
+        print("╚" + "=" * BANNER_WIDTH + "╝")
+    else:
+        print("=" * (BANNER_WIDTH + 2))
 
 
 def test_link_code_generator():
@@ -233,8 +262,15 @@ def test_ui_bindings():
     # Test 3: Check modal screen escape bindings
     print("\n3. Checking Escape key bindings in modal screens...")
     
-    for screen_class in [LoadIdentityScreen, AddContactScreen, 
-                         CreateGroupScreen, SettingsScreen]:
+    # All modal screens that should have escape handlers
+    modal_screens = [
+        LoadIdentityScreen,
+        AddContactScreen,
+        CreateGroupScreen,
+        SettingsScreen
+    ]
+    
+    for screen_class in modal_screens:
         screen_name = screen_class.__name__
         bindings = screen_class.BINDINGS
         binding_keys = [b.key for b in bindings]
@@ -280,12 +316,7 @@ def test_ui_bindings():
 
 def main():
     """Run all verification tests."""
-    print("\n")
-    print("╔" + "=" * 58 + "╗")
-    print("║" + " " * 58 + "║")
-    print("║" + "  Jarvis UI Interaction Verification".center(58) + "║")
-    print("║" + " " * 58 + "║")
-    print("╚" + "=" * 58 + "╝")
+    print_banner("Jarvis UI Interaction Verification")
     
     try:
         test_link_code_generator()
@@ -293,15 +324,9 @@ def main():
         test_manual_contact_entry()
         test_ui_bindings()
         
-        print("\n")
-        print("╔" + "=" * 58 + "╗")
-        print("║" + " " * 58 + "║")
-        print("║" + "  ✓ ALL VERIFICATION TESTS PASSED!".center(58) + "║")
-        print("║" + " " * 58 + "║")
-        print("╚" + "=" * 58 + "╝")
-        print("\n")
+        print_banner("✓ ALL VERIFICATION TESTS PASSED!")
         
-        print("Summary of Verified Features:")
+        print("\nSummary of Verified Features:")
         print("  ✓ LinkCodeGenerator creates jarvis:// format links")
         print("  ✓ Contact linking via link code works")
         print("  ✓ Manual contact entry works")
