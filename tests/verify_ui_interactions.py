@@ -40,10 +40,6 @@ import base64
 BANNER_WIDTH = 58
 
 
-# Constants
-BANNER_WIDTH = 58
-
-
 def print_banner(message, style='double'):
     """Print a formatted banner with the given message."""
     if style == 'double':
