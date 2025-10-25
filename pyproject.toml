@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jarvis-messenger"
+version = "1.0.0"
+description = "A terminal-based peer-to-peer end-to-end encrypted messenger with multi-layer encryption and group chat"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    {name = "orpheus497"}
+]
+keywords = ["messenger", "p2p", "encryption", "security", "privacy", "e2e", "terminal", "cli", "group-chat"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Communications :: Chat",
+    "Topic :: Security :: Cryptography",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
+]
+dependencies = [
+    "textual>=0.47.0",
+    "cryptography>=41.0.7",
+    "argon2-cffi>=23.1.0",
+    "rich>=13.7.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/orpheus497/jarvis"
+"Bug Reports" = "https://github.com/orpheus497/jarvis/issues"
+"Source" = "https://github.com/orpheus497/jarvis"
+
+[project.scripts]
+jarvis = "jarvis.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
