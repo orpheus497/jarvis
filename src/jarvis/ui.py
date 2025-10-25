@@ -829,7 +829,8 @@ class JarvisApp(App):
         )
         if result:
             self.notify(f"Created group: {result.name}", severity="information")
-            # TODO: Add groups to the contact list view
+            contact_list = self.query_one(ContactList)
+            contact_list.refresh_contacts()
     
     async def action_settings(self) -> None:
         """Show settings screen."""
