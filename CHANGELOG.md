@@ -130,19 +130,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Simplified SessionManager to handle single session type
   - Simplified Identity export to complete account backup only
 
-### Architecture
-- Client-server model ensures persistent connections
-  - Background server process maintains all P2P connections
-  - UI clients connect to server via IPC (port 5999 by default)
-  - Server handles all cryptographic operations and message routing
-  - Multiple UI clients can connect to same server instance
-  - Connections remain active when UI is closed
-- IPC protocol uses JSON-RPC over TCP sockets
-  - Request-response pattern for commands
-  - Event broadcasting for real-time updates
-  - Newline-delimited JSON messages
-  - Timeout handling for reliability
-
 ## [1.1.0] - 2025-10-26
 
 ### Added

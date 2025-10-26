@@ -361,7 +361,7 @@ When you start Jarvis:
 
 ### Network Architecture
 
-Jarvis uses direct peer-to-peer TCP connections. When you add a contact, you provide their IP address and port. The background server then:
+Jarvis uses direct peer-to-peer TCP connections. When you add a contact, you provide their IP address and port. The background server then performs the following steps:
 
 1.  Establishes a TCP connection to the contact's IP:port
 2.  Exchanges X25519 public keys
@@ -540,8 +540,8 @@ Jarvis runs a background server process that maintains P2P connections. The serv
 **Check Server Status:**
 ```bash
 # Check if server is running
-ps aux | grep jarvis-server  # Linux/macOS
-tasklist | findstr jarvis-server  # Windows
+pgrep -f jarvis-server  # Linux/macOS
+tasklist /FI "IMAGENAME eq python*" | findstr jarvis  # Windows
 ```
 
 **Start Server Manually (Advanced):**
@@ -590,7 +590,7 @@ Files:
 ### Server Issues
 
 **Server Won't Start:**
-1. Check if another instance is running: `ps aux | grep jarvis-server`
+1. Check if another instance is running: `pgrep -f jarvis-server`
 2. Remove stale PID file: `rm ~/.jarvis/server.pid`
 3. Check port availability: `lsof -i:5999` (Linux/macOS)
 4. Try starting server manually with debug: `jarvis-server --data-dir ~/.jarvis`
@@ -666,6 +666,10 @@ jarvis/
 ├── src/jarvis/
 │   ├── __init__.py       # Package metadata
 │   ├── __main__.py       # Entry point
+│   ├── main.py           # Application launcher
+│   ├── server.py         # Background server daemon
+│   ├── client.py         # Client API for IPC
+│   ├── client_adapter.py # Adapter for UI compatibility
 │   ├── crypto.py         # Five-layer encryption
 │   ├── network.py        # P2P networking
 │   ├── protocol.py       # Wire protocol
@@ -673,8 +677,9 @@ jarvis/
 │   ├── message.py        # Message storage
 │   ├── identity.py       # Identity management
 │   ├── group.py          # Group chat
+│   ├── session.py        # Session management
 │   ├── notification.py   # Cross-platform notifications
-│   ├── ui.py             # Textual UI
+│   ├── ui.py             # Textual UI (client)
 │   └── utils.py          # Utility functions
 └── tests/                # Test suite
 ```
