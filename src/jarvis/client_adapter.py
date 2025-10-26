@@ -36,6 +36,9 @@ class ClientAdapter:
         self.connected = False
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         
+        # Connection state cache for sync access
+        self._connection_cache: Dict[str, bool] = {}
+        
         # Callbacks (compatible with NetworkManager interface)
         self.on_message_callback: Optional[Callable] = None
         self.on_group_message_callback: Optional[Callable] = None
@@ -57,14 +60,29 @@ class ClientAdapter:
         return self._loop
     
     def _run_async(self, coro):
-        """Run async coroutine and return result."""
-        loop = self._get_loop()
-        if loop.is_running():
-            # If loop is already running (e.g., in Textual), create task
-            return asyncio.create_task(coro)
-        else:
-            # If no loop running, run until complete
-            return loop.run_until_complete(coro)
+        """
+        Run async coroutine and return result synchronously.
+        
+        Note: This should only be called from truly synchronous contexts,
+        not from within an async event loop. If called from within a running
+        event loop, returns None.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context - this is a programming error
+            # Return None to avoid blocking
+            logger.warning("_run_async called from within running event loop - returning None")
+            # Schedule the coroutine to run but don't wait for it
+            asyncio.create_task(coro)
+            return None
+        except RuntimeError:
+            # No running loop, safe to use run_until_complete
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                asyncio.set_event_loop(None)
     
     async def connect_to_server_async(self) -> bool:
         """Connect to server (async)."""
@@ -145,22 +163,55 @@ class ClientAdapter:
         pass
     
     def send_message(self, uid: str, message: str, message_id: str, timestamp: str) -> bool:
-        """Send direct message to peer."""
-        response = self.client.send_message(uid, message)
-        return response.get('success', False)
+        """Send direct message to peer (sync wrapper - fires async task)."""
+        try:
+            loop = asyncio.get_running_loop()
+            # Create task to send message asynchronously
+            task = asyncio.create_task(self.send_message_async(uid, message, message_id, timestamp))
+            # Return True to indicate message was scheduled
+            # Actual success/failure will be in the async callback
+            return True
+        except RuntimeError:
+            # No running loop
+            response = self._run_async(self.send_message_async(uid, message, message_id, timestamp))
+            return response if isinstance(response, bool) else False
+    
+    async def send_message_async(self, uid: str, message: str, message_id: str, timestamp: str) -> bool:
+        """Send direct message to peer (async)."""
+        response = await self.client.send_message(uid, message)
+        return response.get('success', False) if isinstance(response, dict) else False
     
     def send_group_message(self, group_id: str, message: str, 
                           message_id: str, timestamp: str) -> int:
-        """Send group message."""
-        response = self.client.send_group_message(group_id, message)
-        if response.get('success'):
+        """Send group message (sync wrapper - fires async task)."""
+        try:
+            loop = asyncio.get_running_loop()
+            # Create task to send message asynchronously
+            task = asyncio.create_task(self.send_group_message_async(group_id, message, message_id, timestamp))
+            # Return 1 to indicate message was scheduled
+            # Actual count will be determined asynchronously
+            return 1
+        except RuntimeError:
+            # No running loop
+            response = self._run_async(self.send_group_message_async(group_id, message, message_id, timestamp))
+            return response if isinstance(response, int) else 0
+    
+    async def send_group_message_async(self, group_id: str, message: str, 
+                                       message_id: str, timestamp: str) -> int:
+        """Send group message (async)."""
+        response = await self.client.send_group_message(group_id, message)
+        if isinstance(response, dict) and response.get('success'):
             return response.get('sent_count', 0)
         return 0
     
     def is_connected(self, uid: str) -> bool:
-        """Check if connected to peer."""
-        response = self.client.get_connection_status(uid)
-        if response.get('success'):
+        """Check if connected to peer (uses cached state for sync access)."""
+        return self._connection_cache.get(uid, False)
+    
+    async def is_connected_async(self, uid: str) -> bool:
+        """Check if connected to peer (async)."""
+        response = await self.client.get_connection_status(uid)
+        if isinstance(response, dict) and response.get('success'):
             return response.get('connected', False)
         return False
     
@@ -209,213 +260,19 @@ class ClientAdapter:
     
     def _handle_connection_state_event(self, event: Dict):
         """Handle connection state change event from server."""
+        uid = event.get('uid')
+        state = event.get('state')
+        
+        # Update connection cache
+        if uid:
+            from .network import ConnectionState
+            self._connection_cache[uid] = (state == ConnectionState.CONNECTED)
+        
+        # Call user callback
         if self.on_connection_state_callback:
-            self.on_connection_state_callback(
-                event.get('uid'),
-                event.get('state')
-            )
+            self.on_connection_state_callback(uid, state)
 
 
-class ServerManagedContactManager:
-    """Contact manager that delegates to server via client."""
-    
-    def __init__(self, client: JarvisClient):
-        self.client = client
-    
-    def add_contact(self, contact: Contact) -> bool:
-        """Add contact."""
-        return self.client.add_contact(
-            contact.uid,
-            contact.username,
-            contact.public_key,
-            contact.fingerprint,
-            contact.host,
-            contact.port,
-            contact.verified
-        )
-    
-    def remove_contact(self, uid: str) -> bool:
-        """Remove contact."""
-        return self.client.remove_contact(uid)
-    
-    def get_contact(self, uid: str) -> Optional[Contact]:
-        """Get contact by UID."""
-        contact_data = self.client.get_contact(uid)
-        if contact_data:
-            return Contact(
-                uid=contact_data['uid'],
-                username=contact_data['username'],
-                public_key=contact_data['public_key'],
-                fingerprint=contact_data['fingerprint'],
-                host=contact_data['host'],
-                port=contact_data['port'],
-                verified=contact_data.get('verified', False)
-            )
-        return None
-    
-    def get_all_contacts(self) -> List[Contact]:
-        """Get all contacts."""
-        contacts_data = self.client.get_contacts()
-        return [
-            Contact(
-                uid=c['uid'],
-                username=c['username'],
-                public_key=c['public_key'],
-                fingerprint=c['fingerprint'],
-                host=c['host'],
-                port=c['port'],
-                verified=c.get('verified', False)
-            )
-            for c in contacts_data
-        ]
-
-
-class ServerManagedGroupManager:
-    """Group manager that delegates to server via client."""
-    
-    def __init__(self, client: JarvisClient):
-        self.client = client
-    
-    def create_group(self, name: str, creator_uid: str, member_uids: List[str],
-                    description: str = '') -> Optional[Group]:
-        """Create group."""
-        group_id = self.client.create_group(name, member_uids, description)
-        if group_id:
-            # Fetch the created group
-            return self.get_group(group_id)
-        return None
-    
-    def delete_group(self, group_id: str) -> bool:
-        """Delete group."""
-        return self.client.delete_group(group_id)
-    
-    def get_group(self, group_id: str) -> Optional[Group]:
-        """Get group by ID."""
-        group_data = self.client.get_group(group_id)
-        if group_data:
-            members = [
-                GroupMember(uid=m['uid'], username=m['username'])
-                for m in group_data.get('members', [])
-            ]
-            return Group(
-                group_id=group_data['group_id'],
-                name=group_data['name'],
-                creator_uid=group_data['creator_uid'],
-                members=members,
-                created_at=group_data.get('created_at', ''),
-                description=group_data.get('description', '')
-            )
-        return None
-    
-    def get_all_groups(self) -> List[Group]:
-        """Get all groups."""
-        groups_data = self.client.get_groups()
-        result = []
-        for g in groups_data:
-            members = [
-                GroupMember(uid=m['uid'], username=m['username'])
-                for m in g.get('members', [])
-            ]
-            result.append(Group(
-                group_id=g['group_id'],
-                name=g['name'],
-                creator_uid=g['creator_uid'],
-                members=members,
-                created_at=g.get('created_at', ''),
-                description=g.get('description', '')
-            ))
-        return result
-        """Disconnect from all peers (server manages this)."""
-        # Server manages connections
-        pass
-    
-    async def send_message_async(self, uid: str, message: str, message_id: str, timestamp: str) -> bool:
-        """Send direct message to peer (async)."""
-        response = await self.client.send_message(uid, message)
-        return response.get('success', False)
-    
-    def send_message(self, uid: str, message: str, message_id: str, timestamp: str) -> bool:
-        """Send direct message to peer (sync wrapper)."""
-        return self._run_async(self.send_message_async(uid, message, message_id, timestamp))
-    
-    async def send_group_message_async(self, group_id: str, message: str, 
-                                       message_id: str, timestamp: str) -> int:
-        """Send group message (async)."""
-        response = await self.client.send_group_message(group_id, message)
-        if response.get('success'):
-            return response.get('sent_count', 0)
-        return 0
-    
-    def send_group_message(self, group_id: str, message: str, 
-                          message_id: str, timestamp: str) -> int:
-        """Send group message (sync wrapper)."""
-        return self._run_async(self.send_group_message_async(group_id, message, message_id, timestamp))
-    
-    async def is_connected_async(self, uid: str) -> bool:
-        """Check if connected to peer (async)."""
-        response = await self.client.get_connection_status(uid)
-        if response.get('success'):
-            return response.get('connected', False)
-        return False
-    
-    def is_connected(self, uid: str) -> bool:
-        """Check if connected to peer (sync wrapper)."""
-        return self._run_async(self.is_connected_async(uid))
-    
-    def add_group_member(self, group_id: str, uid: str):
-        """Add group member (handled by server)."""
-        # Server manages group membership
-        pass
-    
-    def remove_group_member(self, group_id: str, uid: str):
-        """Remove group member (handled by server)."""
-        # Server manages group membership
-        pass
-    
-    async def get_connection_status_async(self, uid: Optional[str] = None) -> Dict[str, bool]:
-        """Get connection status for contact(s) (async)."""
-        response = await self.client.get_connection_status(uid)
-        if response.get('success'):
-            if uid:
-                return {uid: response.get('connected', False)}
-            else:
-                return response.get('statuses', {})
-        return {}
-    
-    def get_connection_status(self, uid: Optional[str] = None) -> Dict[str, bool]:
-        """Get connection status for contact(s) (sync wrapper)."""
-        return self._run_async(self.get_connection_status_async(uid))
-    
-    # Event handlers
-    
-    def _handle_message_event(self, event: Dict):
-        """Handle message received event from server."""
-        if self.on_message_callback:
-            self.on_message_callback(
-                event.get('sender_uid'),
-                event.get('message'),
-                event.get('message_id'),
-                event.get('timestamp')
-            )
-    
-    def _handle_group_message_event(self, event: Dict):
-        """Handle group message received event from server."""
-        if self.on_group_message_callback:
-            self.on_group_message_callback(
-                event.get('group_id'),
-                event.get('sender_uid'),
-                event.get('message'),
-                event.get('message_id'),
-                event.get('timestamp')
-            )
-    
-    def _handle_connection_state_event(self, event: Dict):
-        """Handle connection state change event from server."""
-        if self.on_connection_state_callback:
-            self.on_connection_state_callback(
-                event.get('uid'),
-                event.get('state')
-            )
 
 
 class ServerManagedContactManager:

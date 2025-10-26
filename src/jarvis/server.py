@@ -156,7 +156,7 @@ class JarvisServer:
         self.running = False
         
         # Disconnect all clients
-        async async with self.client_lock:
+        async with self.client_lock:
             for writer in self.clients.values():
                 try:
                     writer.close()
@@ -196,7 +196,7 @@ class JarvisServer:
         logger.debug(f"Client connected from {address}")
         
         # Assign client ID
-        async async with self.client_lock:
+        async with self.client_lock:
             client_id = self.next_client_id
             self.next_client_id += 1
             self.clients[client_id] = writer
@@ -240,7 +240,7 @@ class JarvisServer:
                     break
         finally:
             # Remove client
-            async async with self.client_lock:
+            async with self.client_lock:
                 if client_id in self.clients:
                     del self.clients[client_id]
             
@@ -250,7 +250,7 @@ class JarvisServer:
             except Exception as e:
                 logger.debug(f"Error closing writer: {e}")
     
-    async async def _process_command(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_command(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Process client command and return response."""
         command = request.get('command')
         params = request.get('params', {})
