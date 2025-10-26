@@ -5,9 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2025-10-26
 
 ### Added
+- Connection status indicators with four levels
+  - GREEN: All connections active (all peers online and connected)
+  - AMBER: Partial connections (some peers online, messages can be sent/received)
+  - RED: No active connections (server running but no peers connected)
+  - GREY: Server offline (cannot send or receive messages)
+- Automatic connection establishment on login
+  - Connects to all contacts automatically when user logs in
+  - Establishes group connections for all group members
+  - Maintains parent-child session connections
+- Complete account export functionality
+  - Export entire parent account including identity, contacts, messages, and groups
+  - Only available for parent sessions without child sessions
+  - Encrypted export preserving all account data
+- Connection status tracking for contacts and groups
+  - `get_connection_status()` method for individual contacts
+  - `get_group_connection_status()` method for groups
+  - Real-time status updates based on active connections
+- Automatic connection to all contacts via `connect_all_contacts()` method
 - Account deletion functionality with password confirmation
   - Delete identity and all cryptographic keys
   - Delete all contacts
@@ -80,6 +98,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Group creation UI stability when selecting invitees
 - Worker-related crashes in modal screens
 - Connection state management and automatic reconnection
+- P2P connection establishment between separate machine instances
+  - Fixed client-side handshake flow to properly wait for HANDSHAKE_RESPONSE
+  - Fixed server-side to receive and process client's HANDSHAKE message before sending response
+  - Fixed connection state initialization for incoming connections
+  - Ensured receive/send threads start only after connection is fully authenticated
+  - Added proper socket timeout handling for persistent connections
+  - Improved synchronization between connection endpoints
 
 ### Security
 - Lock feature maintains encryption and connection security

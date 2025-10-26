@@ -35,6 +35,21 @@ class ConnectionState:
     ERROR = 4
 
 
+class ConnectionStatus:
+    """
+    Connection status indicators for UI display.
+    
+    GREEN: All connections active (server online, all peers connected)
+    AMBER: Partial connections (server online, some peers connected)
+    RED: No connections (server online, no peers connected)
+    GREY: Server offline (cannot send or receive)
+    """
+    GREEN = "green"   # All members online and connected
+    AMBER = "amber"   # Some members online, connection active
+    RED = "red"       # No connections active, but server running
+    GREY = "grey"     # Server offline completely
+
+
 class P2PConnection:
     """Represents a P2P connection with another user."""
     
@@ -118,6 +133,28 @@ class P2PConnection:
                 crypto.generate_fingerprint(self.identity.get_public_key_bytes())
             )
             self.socket.sendall(handshake)
+            
+            # Wait for handshake response
+            header_data = self._recv_exact(Protocol.HEADER_SIZE)
+            version, msg_type_int, payload_length = struct.unpack('!BHI', header_data)
+            
+            # Receive the full payload
+            payload_data = self._recv_exact(payload_length)
+            full_message = header_data + payload_data
+            
+            # Unpack and verify handshake response
+            msg_type, response_payload, _ = Protocol.unpack_message(full_message)
+            if msg_type != MessageType.HANDSHAKE_RESPONSE:
+                raise Exception(f"Expected HANDSHAKE_RESPONSE, got {msg_type}")
+            
+            if not response_payload.get('accepted', False):
+                raise Exception("Handshake rejected by peer")
+            
+            # Mark as authenticated
+            self._set_state(ConnectionState.AUTHENTICATED)
+            
+            # Set socket timeout for long-running connection
+            self.socket.settimeout(1.0)
             
             # Start threads
             self.receive_thread = threading.Thread(target=self._receive_loop, daemon=True)
@@ -253,9 +290,9 @@ class P2PConnection:
         """Handle received message based on type."""
         
         if msg_type == MessageType.HANDSHAKE_RESPONSE:
-            # Handshake accepted, mark as authenticated
-            if payload.get('accepted', False):
-                self._set_state(ConnectionState.AUTHENTICATED)
+            # Handshake response is now handled during connection establishment
+            # This should not occur in normal operation after connection is established
+            pass
         
         elif msg_type == MessageType.TEXT_MESSAGE:
             # Decrypt and deliver text message
@@ -429,13 +466,32 @@ class P2PServer:
             # Generate fingerprint
             fingerprint = crypto.generate_fingerprint(peer_public_key_bytes)
             
-            # Notify callback with established connection
+            # Receive the client's handshake message
+            # First, receive enough data to parse the header
+            header_data = self._recv_exact_from_socket(client_socket, Protocol.HEADER_SIZE)
+            
+            # Parse header to get payload length
+            version, msg_type_int, payload_length = struct.unpack('!BHI', header_data)
+            
+            # Receive the full payload
+            payload_data = self._recv_exact_from_socket(client_socket, payload_length)
+            
+            # Combine header and payload for unpacking
+            full_message = header_data + payload_data
+            
+            # Verify it's a handshake
+            msg_type, handshake_payload, _ = Protocol.unpack_message(full_message)
+            if msg_type != MessageType.HANDSHAKE:
+                raise Exception("Expected HANDSHAKE message")
+            
+            # Notify callback with established connection and handshake info
             if self.on_connection_callback:
                 self.on_connection_callback(
                     client_socket,
                     session_keys,
                     fingerprint,
-                    address
+                    address,
+                    handshake_payload
                 )
                 
         except Exception as e:
@@ -577,6 +633,25 @@ class NetworkManager:
                 return True
             return False
     
+    def connect_all_contacts(self) -> Dict[str, bool]:
+        """
+        Establish connections to all contacts on login.
+        
+        Returns dictionary mapping contact UIDs to connection success status.
+        This method is called when user logs in to establish all P2P connections.
+        """
+        results = {}
+        contacts = self.contact_manager.get_all_contacts()
+        
+        for contact in contacts:
+            try:
+                success = self.connect_to_peer(contact)
+                results[contact.uid] = success
+            except Exception:
+                results[contact.uid] = False
+        
+        return results
+    
     def disconnect_from_peer(self, uid: str):
         """Disconnect from a peer."""
         with self.lock:
@@ -638,6 +713,57 @@ class NetworkManager:
         connection = self.connections.get(uid)
         return connection.state if connection else ConnectionState.DISCONNECTED
     
+    def get_connection_status(self, uid: str) -> str:
+        """
+        Get connection status for a single contact.
+        
+        Returns:
+            ConnectionStatus.GREEN: Contact online and connected
+            ConnectionStatus.RED: Contact offline or not connected (but server running)
+            ConnectionStatus.GREY: Our server is offline
+        """
+        if not self.running:
+            return ConnectionStatus.GREY
+        
+        if self.is_connected(uid):
+            return ConnectionStatus.GREEN
+        else:
+            return ConnectionStatus.RED
+    
+    def get_group_connection_status(self, group_id: str) -> str:
+        """
+        Get connection status for a group.
+        
+        Returns:
+            ConnectionStatus.GREEN: All members online and connected
+            ConnectionStatus.AMBER: Some members online, can send/receive
+            ConnectionStatus.RED: No members connected (but server running)
+            ConnectionStatus.GREY: Our server is offline
+        """
+        if not self.running:
+            return ConnectionStatus.GREY
+        
+        if group_id not in self.group_members:
+            return ConnectionStatus.RED
+        
+        members = self.group_members[group_id]
+        if not members:
+            return ConnectionStatus.RED
+        
+        # Exclude ourselves from the count
+        other_members = [uid for uid in members if uid != self.my_uid]
+        if not other_members:
+            return ConnectionStatus.GREEN  # Solo group
+        
+        connected_count = sum(1 for uid in other_members if self.is_connected(uid))
+        
+        if connected_count == len(other_members):
+            return ConnectionStatus.GREEN  # All members connected
+        elif connected_count > 0:
+            return ConnectionStatus.AMBER  # Some members connected
+        else:
+            return ConnectionStatus.RED  # No members connected
+    
     def _handle_message(self, sender_uid: str, content: str, message_id: str, timestamp: str):
         """Handle received direct message."""
         if self.on_message_callback:
@@ -656,7 +782,7 @@ class NetworkManager:
     
     def _handle_incoming_connection(self, client_socket: socket.socket, 
                                     session_keys: Tuple, fingerprint: str, 
-                                    address: Tuple[str, int]):
+                                    address: Tuple[str, int], handshake_payload: Dict):
         """Handle incoming connection from a peer."""
         # 1. Create a P2PConnection from the accepted socket
         # 2. Completing the handshake
@@ -684,14 +810,23 @@ class NetworkManager:
             connection.on_group_message_callback = self._handle_group_message
             connection.on_state_change_callback = self._handle_state_change
 
+            # Set socket timeout for long-running connection
+            client_socket.settimeout(1.0)
+            
+            # Set state to AUTHENTICATED before starting threads
+            connection._set_state(ConnectionState.AUTHENTICATED)
+
             # Send handshake response
+            # Note: We send directly via socket instead of using send_queue because:
+            # 1. The send thread hasn't started yet
+            # 2. We need immediate synchronous sending to complete the handshake
             handshake_response = protocol.Protocol.create_handshake_response(
                 self.my_uid,
                 self.my_username,
                 crypto.generate_fingerprint(self.identity.get_public_key_bytes()),
                 accepted=True
             )
-            connection.send_queue.put(handshake_response)
+            client_socket.sendall(handshake_response)
 
             # Start threads
             connection.receive_thread = threading.Thread(target=connection._receive_loop, daemon=True)
@@ -706,7 +841,6 @@ class NetworkManager:
 
             # Add to connections
             self.connections[contact.uid] = connection
-            connection._set_state(ConnectionState.AUTHENTICATED)
     
     def disconnect_all(self):
         """Disconnect from all peers."""
