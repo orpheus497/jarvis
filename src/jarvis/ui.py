@@ -445,6 +445,125 @@ class CreateGroupScreen(ModalScreen):
         self.dismiss(None)
 
 
+class LockScreen(ModalScreen):
+    """Lock screen to secure the application."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss_lock", "Cancel"),
+    ]
+
+    def __init__(self, password: str):
+        super().__init__()
+        self.password = password
+        self.attempts = 0
+
+    def compose(self) -> ComposeResult:
+        """Compose the screen layout."""
+        with Container(id="lock-dialog"):
+            yield AnimatedBanner()
+            yield Label("Jarvis is Locked", id="lock-title")
+            yield Label("Enter your password to unlock:", id="lock-prompt")
+            yield Input(placeholder="Password", password=True, id="password-input")
+            yield Horizontal(
+                Button("Unlock", variant="primary", id="unlock-btn"),
+                Button("Cancel", variant="default", id="cancel-btn"),
+                id="button-row"
+            )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        if event.button.id == "unlock-btn":
+            password_input = self.query_one("#password-input", Input)
+            entered_password = password_input.value
+
+            if entered_password == self.password:
+                self.dismiss(True)
+            else:
+                self.attempts += 1
+                password_input.value = ""
+                password_input.placeholder = f"Incorrect password! (Attempt {self.attempts})"
+        elif event.button.id == "cancel-btn":
+            self.dismiss(False)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle Enter key in password input."""
+        if event.input.id == "password-input":
+            entered_password = event.input.value
+
+            if entered_password == self.password:
+                self.dismiss(True)
+            else:
+                self.attempts += 1
+                event.input.value = ""
+                event.input.placeholder = f"Incorrect password! (Attempt {self.attempts})"
+
+    def action_dismiss_lock(self) -> None:
+        """Cancel lock (do not unlock)."""
+        self.dismiss(False)
+
+
+class DeleteAccountScreen(ModalScreen):
+    """Screen for deleting account with confirmation."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, identity: Identity, password: str):
+        super().__init__()
+        self.identity = identity
+        self.stored_password = password
+
+    def compose(self) -> ComposeResult:
+        """Compose the screen layout."""
+        with Container(id="delete-account-dialog"):
+            yield Label("Delete Account", id="dialog-title")
+            yield Label("⚠️  WARNING: This action cannot be undone!", id="warning-label")
+            yield Label("", id="spacer")
+            yield Label("This will permanently delete:", id="info-label")
+            yield Label("  • Your identity and keys", id="info-detail-1")
+            yield Label("  • All contacts", id="info-detail-2")
+            yield Label("  • All messages", id="info-detail-3")
+            yield Label("  • All groups", id="info-detail-4")
+            yield Label("", id="spacer2")
+            yield Label("Enter your password to confirm deletion:", id="confirm-label")
+            yield Input(placeholder="Password", password=True, id="password-input")
+            yield Horizontal(
+                Button("Delete Account", variant="error", id="delete-btn"),
+                Button("Cancel", variant="default", id="cancel-btn"),
+                id="button-row"
+            )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        if event.button.id == "delete-btn":
+            password_input = self.query_one("#password-input", Input)
+            entered_password = password_input.value
+
+            if entered_password == self.stored_password:
+                self.dismiss(True)
+            else:
+                password_input.value = ""
+                password_input.placeholder = "Incorrect password!"
+        elif event.button.id == "cancel-btn":
+            self.dismiss(False)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle Enter key in password input."""
+        if event.input.id == "password-input":
+            entered_password = event.input.value
+
+            if entered_password == self.stored_password:
+                self.dismiss(True)
+            else:
+                event.input.value = ""
+                event.input.placeholder = "Incorrect password!"
+
+    def action_cancel(self) -> None:
+        """Cancel and close."""
+        self.dismiss(False)
+
+
 class SettingsScreen(ModalScreen):
     """Settings screen."""
 
@@ -470,6 +589,7 @@ class SettingsScreen(ModalScreen):
             yield Input(value="", id="link-code-display", disabled=True)
             yield Horizontal(
                 Button("Copy Link Code", variant="primary", id="copy-btn"),
+                Button("Delete Account", variant="error", id="delete-account-btn"),
                 Button("Close", variant="default", id="close-btn"),
                 id="button-row"
             )
@@ -492,12 +612,14 @@ class SettingsScreen(ModalScreen):
                 )
             except Exception:
                 pass
+        elif event.button.id == "delete-account-btn":
+            self.dismiss("delete_account")
         elif event.button.id == "close-btn":
-            self.dismiss()
+            self.dismiss(None)
 
     def action_cancel(self) -> None:
         """Cancel and close."""
-        self.dismiss()
+        self.dismiss(None)
 
 
 class ContactList(ListView):
@@ -589,7 +711,8 @@ class JarvisApp(App):
         background: #000000;
     }
 
-    #identity-dialog, #add-contact-dialog, #create-group-dialog, #settings-dialog {
+    #identity-dialog, #add-contact-dialog, #create-group-dialog, #settings-dialog, 
+    #lock-dialog, #delete-account-dialog {
         align: center middle;
         width: 80;
         height: auto;
@@ -598,11 +721,28 @@ class JarvisApp(App):
         padding: 1 2;
     }
 
-    #welcome-label, #dialog-title {
+    #welcome-label, #dialog-title, #lock-title {
         text-align: center;
         text-style: bold;
         color: #ff4444;
         margin-bottom: 1;
+    }
+    
+    #warning-label {
+        text-align: center;
+        text-style: bold;
+        color: #ff0000;
+        margin-bottom: 1;
+    }
+    
+    #lock-prompt, #confirm-label, #info-label {
+        color: #cccccc;
+        margin-bottom: 1;
+    }
+    
+    #info-detail-1, #info-detail-2, #info-detail-3, #info-detail-4 {
+        color: #888888;
+        margin-left: 2;
     }
 
     #prompt-label, #dialog-subtitle, #manual-label, #members-label, #link-label {
@@ -720,6 +860,7 @@ class JarvisApp(App):
         Binding("ctrl+c", "add_contact", "Add Contact"),
         Binding("ctrl+g", "create_group", "New Group"),
         Binding("ctrl+s", "settings", "Settings"),
+        Binding("ctrl+l", "lock_app", "Lock"),
         Binding("ctrl+q", "quit", "Quit"),
     ]
 
@@ -1004,7 +1145,42 @@ class JarvisApp(App):
 
     async def _show_settings(self) -> None:
         """Worker to show settings screen."""
-        await self.push_screen_wait(SettingsScreen(self.identity))
+        result = await self.push_screen_wait(SettingsScreen(self.identity))
+        
+        if result == "delete_account":
+            # Show delete account confirmation
+            delete_result = await self.push_screen_wait(
+                DeleteAccountScreen(self.identity, self.password)
+            )
+            
+            if delete_result:
+                # Delete all data
+                self.identity_manager.delete_identity(self.password)
+                self.contact_manager.delete_all_contacts()
+                self.message_store.delete_all_messages()
+                self.group_manager.delete_all_groups()
+                
+                # Disconnect and shutdown
+                if self.network_manager:
+                    self.network_manager.disconnect_all()
+                    self.network_manager.stop_server()
+                
+                self.notify("Account deleted successfully.", severity="warning")
+                self.exit()
+    
+    def action_lock_app(self) -> None:
+        """Lock the application."""
+        self.run_worker(self._lock_app())
+    
+    async def _lock_app(self) -> None:
+        """Worker to lock the application."""
+        result = await self.push_screen_wait(LockScreen(self.password))
+        
+        if result:
+            self.notify("Application unlocked", severity="information")
+        else:
+            # User cancelled - could optionally do something here
+            pass
 
     def action_quit(self) -> None:
         """Quit the application."""

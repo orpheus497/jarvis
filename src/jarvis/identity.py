@@ -150,3 +150,22 @@ class IdentityManager:
         # Save with new password
         self.save_identity(new_password)
         return True
+    
+    def delete_identity(self, password: str) -> bool:
+        """
+        Delete identity file after verifying password.
+        Returns True if successful, False if password is incorrect or file doesn't exist.
+        """
+        # Verify password first
+        if not self.load_identity(password):
+            return False
+        
+        # Delete identity file
+        if os.path.exists(self.identity_file):
+            try:
+                os.remove(self.identity_file)
+                self.identity = None
+                return True
+            except Exception:
+                return False
+        return False

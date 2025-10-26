@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Account deletion functionality with password confirmation
+  - Delete identity and all cryptographic keys
+  - Delete all contacts
+  - Delete all messages (direct and group)
+  - Delete all groups
+- Lock feature (Ctrl+L) to secure the application when stepping away
+  - Keeps network connections active while UI is locked
+  - Password verification required to unlock
+  - Visual lock screen with animated banner
+- Enhanced data management capabilities
+  - Individual contact deletion via ContactManager
+  - Individual group deletion via GroupManager
+  - Conversation deletion support
+  - Complete account and data wipe functionality
+- Delete Account button in Settings screen
+- Comprehensive delete account dialog with warnings
+
+### Changed
+- Settings screen now includes account deletion option
+- Enhanced keyboard shortcuts with lock feature (Ctrl+L)
+- Improved connection stability and background processing
+- Connection management runs in background threads
+- Simultaneous host/client P2P model ensures reliable connectivity
+- Online status detection based on active peer-to-peer connections
+
+### Fixed
+- Group creation UI stability when selecting invitees
+- Worker-related crashes in modal screens
+- Connection state management and automatic reconnection
+
+### Security
+- Lock feature maintains encryption and connection security
+- Account deletion securely removes all sensitive data
+- Password verification required for destructive operations
+
 ## [1.0.0] - 2025-10-25
 
 ### Added

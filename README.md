@@ -68,6 +68,14 @@ Your conversations remain completely under your control.
 *   **Status Indicators:** Real-time online/offline status
 *   **Unread Badges:** Visual indicators for unread messages
 *   **Keyboard Shortcuts:** Efficient keyboard-driven interface
+*   **Lock Feature:** Secure your app with Ctrl+L (keeps connections active)
+
+### Privacy & Data Control
+
+*   **Account Deletion:** Complete account and data deletion with password confirmation
+*   **Data Management:** Delete individual contacts, messages, or groups
+*   **Secure Wipe:** All cryptographic keys and sensitive data removed on deletion
+*   **User Control:** Full control over your data at all times
 
 ---
 
@@ -211,6 +219,8 @@ Share this information with contacts who want to add you:
 *   **Status Indicators:** Green dot = online, Red dot = offline
 *   **Unread Messages:** Yellow badge shows unread count
 *   **Settings:** Press `Ctrl+S` to access settings
+*   **Lock App:** Press `Ctrl+L` to lock the application (keeps connections active)
+*   **Delete Account:** Access via Settings menu - removes all data permanently
 *   **Quit:** Press `Ctrl+Q` or `Escape` to exit
 
 ### Keyboard Shortcuts
@@ -218,6 +228,7 @@ Share this information with contacts who want to add you:
 *   `Ctrl+C` - Add Contact
 *   `Ctrl+G` - New Group
 *   `Ctrl+S` - Settings
+*   `Ctrl+L` - Lock Application
 *   `Ctrl+Q` - Quit
 *   `Enter` - Send Message
 *   `Escape` - Cancel/Close
