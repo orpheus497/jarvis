@@ -9,17 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Converted entire networking architecture from threading to asyncio per technical blueprint
-  - P2P connections now use asyncio.open_connection() and asyncio.start_server()
-  - All threading.Thread replaced with asyncio.Task
-  - Network I/O uses asyncio StreamReader/StreamWriter
-  - Non-blocking operations throughout with async/await syntax
+  - **Phase 1 - P2P Network Layer (network.py):**
+    - P2P connections use asyncio.open_connection() and asyncio.start_server()
+    - All threading.Thread replaced with asyncio.Task
+    - Network I/O uses asyncio StreamReader/StreamWriter
+    - Non-blocking operations with async/await syntax
+    - Connection health monitoring with detailed statistics
+    - Comprehensive error handling and logging
+    - Exponential backoff for reconnection attempts
+    - Proper timeout handling and graceful degradation
+  - **Phase 2 - Server IPC Layer (server.py):**
+    - IPC server uses asyncio.start_server()
+    - All command handlers converted to async coroutines
+    - Client handling uses asyncio tasks
+    - Event broadcasting fully async
+    - Server lifecycle methods (start, stop, run) are async
+    - asyncio.run() entry point for daemon
+    - Comprehensive error handling and logging
+  - **Phase 3 - Client IPC Layer (client.py):**
+    - Client connection uses asyncio.open_connection()
+    - All public API methods are async coroutines
+    - Receive loop runs as asyncio task
+    - Request/response uses asyncio.Queue
+    - Event callbacks support both sync and async
+    - Proper connection cleanup and task cancellation
+  - **Phase 4 - Client Adapter (client_adapter.py):**
+    - Async/sync bridging for UI compatibility
+    - All methods available in async and sync versions
+    - Detects running event loop (Textual) vs standalone
+    - ServerManagedContactManager with async/sync wrappers
+    - ServerManagedGroupManager with async/sync wrappers
+    - Maintains NetworkManager-compatible interface
   - Unified asynchronous architecture for integration with Textual UI framework
-  - IPC communication uses asyncio for client-server protocol
-  - Connection management, keepalive, and reconnection logic use asyncio.Task
-  - Comprehensive error handling and logging throughout async operations
-  - Connection health monitoring and diagnostics with detailed statistics
-  - Exponential backoff for reconnection attempts
-  - Graceful degradation for partial connection failures
+  - All I/O operations non-blocking throughout application
 
 ## [1.2.0] - 2025-10-26
 
