@@ -198,9 +198,11 @@ class LoadIdentityScreen(ModalScreen):
         with Container(id="identity-dialog"):
             yield AnimatedBanner()
             yield Label("Welcome to Jarvis", id="welcome-label")
+            yield Label("Peer-to-Peer Encrypted Messenger", id="dialog-subtitle")
 
             if self.identity_manager.identity_exists():
                 yield Label("Enter your password to load identity:", id="prompt-label")
+                yield Label("Your identity and contacts will be loaded securely.", id="info-label")
                 yield Input(placeholder="Password", password=True, id="password-input")
                 yield Horizontal(
                     Button("Load Identity", variant="primary", id="load-btn"),
@@ -209,10 +211,14 @@ class LoadIdentityScreen(ModalScreen):
                 )
             else:
                 yield Label("Create a new identity:", id="prompt-label")
-                yield Input(placeholder="Username", id="username-input")
-                yield Input(placeholder="Password", password=True, id="password-input")
-                yield Input(placeholder="Listen Port", value=str(self.default_port),
+                yield Label("Your identity will be encrypted with your password.", id="info-label")
+                yield Label("⚠️ Your password cannot be recovered if forgotten!", id="warning-label")
+                yield Input(placeholder="Username (visible to contacts)", id="username-input")
+                yield Input(placeholder="Password (strong password recommended)", password=True, id="password-input")
+                yield Input(placeholder="Listen Port (default: 5000)", value=str(self.default_port),
                            id="port-input")
+                yield Label("The port is used for incoming P2P connections.", id="info-detail-1")
+                yield Label("You may need to configure port forwarding on your router.", id="info-detail-2")
                 yield Horizontal(
                     Button("Create Identity", variant="primary", id="create-btn"),
                     Button("Cancel", variant="default", id="cancel-btn"),
@@ -318,18 +324,21 @@ class AddContactScreen(ModalScreen):
         """Compose the screen layout."""
         with Container(id="add-contact-dialog"):
             yield Label("Add Contact", id="dialog-title")
-            yield Label("Paste Link Code or enter details manually:", id="dialog-subtitle")
+            yield Label("Easiest: Paste a Link Code from the contact", id="dialog-subtitle")
+            yield Label("Get the link code from Settings > Copy Link Code", id="info-detail-1")
             yield Input(placeholder="Link Code (jarvis://...)", id="link-code-input")
             yield Button("Paste from Clipboard", variant="default", id="paste-btn")
-            yield Label("Or enter details manually:", id="manual-label")
-            yield Input(placeholder="Username", id="username-input")
+            yield Label("Or import a Contact Card file (.jcard):", id="manual-label")
+            yield Button("Import Contact Card", variant="default", id="import-card-btn")
+            yield Label("Or enter contact details manually:", id="manual-label")
+            yield Input(placeholder="Username (display name)", id="username-input")
             yield Input(placeholder="UID (32 hex characters)", id="uid-input")
-            yield Input(placeholder="Public Key (base64)", id="pubkey-input")
-            yield Input(placeholder="Host (IP or hostname)", id="host-input")
-            yield Input(placeholder="Port", value="5000", id="port-input")
+            yield Input(placeholder="Public Key (base64 encoded)", id="pubkey-input")
+            yield Input(placeholder="Host (IP address or hostname)", id="host-input")
+            yield Input(placeholder="Port (default: 5000)", value="5000", id="port-input")
+            yield Label("⚠️ Verify the fingerprint with contact after adding!", id="warning-label")
             yield Horizontal(
                 Button("Add Contact", variant="primary", id="add-btn"),
-                Button("Import Contact Card", variant="default", id="import-card-btn"),
                 Button("Cancel", variant="default", id="cancel-btn"),
                 id="button-row"
             )
@@ -641,18 +650,15 @@ class SettingsScreen(ModalScreen):
         Binding("escape", "cancel", "Cancel"),
     ]
 
-    def __init__(self, identity: Identity, is_parent_session: bool = True):
+    def __init__(self, identity: Identity):
         super().__init__()
         self.identity = identity
-        self.is_parent_session = is_parent_session
 
     def compose(self) -> ComposeResult:
         """Compose the screen layout."""
         with Container(id="settings-dialog"):
             yield Label("Settings", id="dialog-title")
             yield Label(f"Username: {self.identity.username}", id="username-label")
-            yield Label(f"Session Type: {'Parent' if self.is_parent_session else 'Child'}", 
-                       id="session-type-label")
             yield Label(f"UID:", id="uid-label")
             yield Input(value=self.identity.uid, id="uid-display", disabled=True)
             yield Button("Copy UID", variant="default", id="copy-uid-btn")
@@ -669,23 +675,15 @@ class SettingsScreen(ModalScreen):
                 Button("Export Contact Card", variant="default", id="export-card-btn"),
                 id="button-row-1"
             )
-            
-            if self.is_parent_session:
-                yield Horizontal(
-                    Button("Export Identity", variant="default", id="export-identity-btn"),
-                    Button("Manage Sessions", variant="default", id="manage-sessions-btn"),
-                    id="button-row-2"
-                )
-                yield Horizontal(
-                    Button("Delete Account", variant="error", id="delete-account-btn"),
-                    Button("Close", variant="default", id="close-btn"),
-                    id="button-row-3"
-                )
-            else:
-                yield Horizontal(
-                    Button("Close", variant="default", id="close-btn"),
-                    id="button-row-2"
-                )
+            yield Horizontal(
+                Button("Export Account", variant="default", id="export-account-btn"),
+                Button("Delete Account", variant="error", id="delete-account-btn"),
+                id="button-row-2"
+            )
+            yield Horizontal(
+                Button("Close", variant="default", id="close-btn"),
+                id="button-row-3"
+            )
 
     def on_mount(self) -> None:
         """Generate link code on mount."""
@@ -708,10 +706,8 @@ class SettingsScreen(ModalScreen):
                 pass
         elif event.button.id == "export-card-btn":
             self.dismiss("export_card")
-        elif event.button.id == "export-identity-btn":
-            self.dismiss("export_identity")
-        elif event.button.id == "manage-sessions-btn":
-            self.dismiss("manage_sessions")
+        elif event.button.id == "export-account-btn":
+            self.dismiss("export_account")
         elif event.button.id == "copy-uid-btn":
             try:
                 pyperclip.copy(self.identity.uid)
@@ -726,75 +722,6 @@ class SettingsScreen(ModalScreen):
                 pass
         elif event.button.id == "delete-account-btn":
             self.dismiss("delete_account")
-        elif event.button.id == "close-btn":
-            self.dismiss(None)
-
-    def action_cancel(self) -> None:
-        """Cancel and close."""
-        self.dismiss(None)
-
-
-class SessionManagementScreen(ModalScreen):
-    """Screen for managing parent and child sessions."""
-
-    BINDINGS = [
-        Binding("escape", "cancel", "Cancel"),
-    ]
-
-    def __init__(self, session_manager, current_session_id: str):
-        super().__init__()
-        self.session_manager = session_manager
-        self.current_session_id = current_session_id
-
-    def compose(self) -> ComposeResult:
-        """Compose the screen layout."""
-        with Container(id="sessions-dialog"):
-            yield Label("Session Management", id="dialog-title")
-            yield Label("Active Sessions:", id="sessions-label")
-            yield ListView(id="sessions-list")
-            yield Horizontal(
-                Button("Disable Session", variant="default", id="disable-btn"),
-                Button("Enable Session", variant="default", id="enable-btn"),
-                Button("Delete Session", variant="error", id="delete-btn"),
-                Button("Close", variant="default", id="close-btn"),
-                id="button-row"
-            )
-
-    def on_mount(self) -> None:
-        """Populate sessions list."""
-        sessions_list = self.query_one("#sessions-list", ListView)
-        child_sessions = self.session_manager.get_child_sessions(self.current_session_id)
-        
-        if not child_sessions:
-            sessions_list.append(ListItem(Label("No child sessions")))
-        else:
-            for session in child_sessions:
-                status = "Enabled" if session.enabled else "Disabled"
-                label_text = f"Session {session.session_id[:8]}... | {session.ip_address} | {status}"
-                sessions_list.append(ListItem(Label(label_text)))
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle button press."""
-        sessions_list = self.query_one("#sessions-list", ListView)
-        
-        if event.button.id == "disable-btn":
-            if sessions_list.index is not None and sessions_list.index >= 0:
-                child_sessions = self.session_manager.get_child_sessions(self.current_session_id)
-                if child_sessions and sessions_list.index < len(child_sessions):
-                    session = child_sessions[sessions_list.index]
-                    self.dismiss(("disable", session.session_id))
-        elif event.button.id == "enable-btn":
-            if sessions_list.index is not None and sessions_list.index >= 0:
-                child_sessions = self.session_manager.get_child_sessions(self.current_session_id)
-                if child_sessions and sessions_list.index < len(child_sessions):
-                    session = child_sessions[sessions_list.index]
-                    self.dismiss(("enable", session.session_id))
-        elif event.button.id == "delete-btn":
-            if sessions_list.index is not None and sessions_list.index >= 0:
-                child_sessions = self.session_manager.get_child_sessions(self.current_session_id)
-                if child_sessions and sessions_list.index < len(child_sessions):
-                    session = child_sessions[sessions_list.index]
-                    self.dismiss(("delete", session.session_id))
         elif event.button.id == "close-btn":
             self.dismiss(None)
 
@@ -1192,9 +1119,11 @@ class JarvisApp(App):
     def compose(self) -> ComposeResult:
         """Compose the main application layout."""
         yield Header()
+        yield AnimatedBanner()
         with Container(id="main-container"):
             with Vertical(id="contacts-panel"):
                 yield Label("Contacts & Groups")
+                yield Label("", id="connection-status")
                 yield ContactList(self.contact_manager)
             with Vertical(id="chat-panel"):
                 yield Label("Select a contact or group to start chatting", id="chat-header")
@@ -1221,8 +1150,8 @@ class JarvisApp(App):
 
         self.identity, self.password = result
         
-        # Create parent session
-        self.session_manager.create_parent_session(self.identity.uid)
+        # Create session
+        self.session_manager.create_session(self.identity.uid)
 
         # Initialize network manager
         self.network_manager = NetworkManager(
@@ -1244,11 +1173,48 @@ class JarvisApp(App):
             self.exit()
             return
 
+        self.notify("Network server started successfully", severity="information")
+
+        # Connect to all contacts automatically
+        self.notify("Connecting to contacts...", severity="information")
+        connection_results = self.network_manager.connect_all_contacts()
+        
+        # Report connection status
+        successful = sum(1 for success in connection_results.values() if success)
+        total = len(connection_results)
+        if total > 0:
+            self.notify(f"Connected to {successful}/{total} contacts", severity="information")
+            self._update_connection_status()
+        else:
+            self.notify("No contacts to connect to. Add contacts to start messaging.", severity="information")
+
         # Refresh contact list
         contact_list = self.query_one(ContactList)
         contact_list.refresh_contacts()
 
         self.notify(f"Welcome, {self.identity.username}!", severity="information")
+
+    def _update_connection_status(self) -> None:
+        """Update connection status display."""
+        if not self.network_manager:
+            return
+        
+        try:
+            status_label = self.query_one("#connection-status", Label)
+            total_contacts = len(self.contact_manager.get_all_contacts())
+            connected = sum(1 for c in self.contact_manager.get_all_contacts() 
+                          if self.network_manager.is_connected(c.uid))
+            
+            if total_contacts == 0:
+                status_label.update("Status: No contacts")
+            elif connected == total_contacts:
+                status_label.update(f"[green]● Status: {connected}/{total_contacts} online[/]")
+            elif connected > 0:
+                status_label.update(f"[yellow]● Status: {connected}/{total_contacts} online[/]")
+            else:
+                status_label.update(f"[red]● Status: {connected}/{total_contacts} online[/]")
+        except Exception:
+            pass  # Status label may not be ready yet
 
     def _handle_incoming_message(self, sender_uid: str, content: str,
                                  message_id: str, timestamp: str) -> None:
@@ -1311,38 +1277,45 @@ class JarvisApp(App):
         if contact:
             if state == ConnectionState.AUTHENTICATED:
                 self.contact_manager.mark_online(uid)
+                self.notify(f"Connected to {contact.username}", severity="information")
             else:
                 self.contact_manager.mark_offline(uid)
 
             # Refresh contact list
             contact_list = self.query_one(ContactList)
             contact_list.refresh_contacts()
+            
+            # Update connection status
+            self._update_connection_status()
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle contact selection."""
-        # Get selected contact
-        contacts = self.contact_manager.get_all_contacts()
-        if event.list_view.index < len(contacts):
-            contact = contacts[event.list_view.index]
-            self.current_contact = contact
-            self.current_group = None
+        try:
+            # Get selected contact
+            contacts = self.contact_manager.get_all_contacts()
+            if event.list_view.index < len(contacts):
+                contact = contacts[event.list_view.index]
+                self.current_contact = contact
+                self.current_group = None
 
-            # Load and display conversation
-            messages = self.message_store.get_conversation(contact.uid)
-            chat_view = self.query_one(ChatView)
-            chat_view.display_messages(messages, self.identity.uid, self.contact_manager)
+                # Load and display conversation
+                messages = self.message_store.get_conversation(contact.uid)
+                chat_view = self.query_one(ChatView)
+                chat_view.display_messages(messages, self.identity.uid, self.contact_manager)
 
-            # Update header
-            self.query_one("#chat-header", Label).update(
-                f"Chat with {contact.username}"
-            )
+                # Update header
+                self.query_one("#chat-header", Label).update(
+                    f"Chat with {contact.username}"
+                )
 
-            # Mark as read
-            self.message_store.mark_as_read(contact.uid)
+                # Mark as read
+                self.message_store.mark_as_read(contact.uid)
 
-            # Try to connect if not connected
-            if not self.network_manager.is_connected(contact.uid):
-                self.run_worker(self._connect_to_contact(contact))
+                # Try to connect if not connected
+                if self.network_manager and not self.network_manager.is_connected(contact.uid):
+                    self.run_worker(self._connect_to_contact(contact))
+        except Exception as e:
+            self.notify(f"Error loading contact: {str(e)}", severity="error")
 
     async def _connect_to_contact(self, contact: Contact) -> None:
         """Connect to a contact in the background."""
@@ -1363,65 +1336,75 @@ class JarvisApp(App):
 
     def _send_current_message(self) -> None:
         """Send the current message."""
-        message_input = self.query_one("#message-input", Input)
-        content = message_input.value.strip()
+        try:
+            message_input = self.query_one("#message-input", Input)
+            content = message_input.value.strip()
 
-        if not content:
-            return
+            if not content:
+                return
 
-        if self.current_contact:
-            # Send direct message
-            message_id = crypto.generate_secure_token(16)
-            timestamp = datetime.now().isoformat()
+            if not self.network_manager:
+                self.notify("Network not initialized", severity="error")
+                return
 
-            if self.network_manager.send_message(
-                self.current_contact.uid, content, message_id, timestamp
-            ):
-                # Store message
-                msg = MessageModel(
-                    contact_uid=self.current_contact.uid,
-                    content=content,
-                    sent_by_me=True,
-                    timestamp=timestamp,
-                    message_id=message_id
+            if self.current_contact:
+                # Send direct message
+                message_id = crypto.generate_secure_token(16)
+                timestamp = datetime.now().isoformat()
+
+                if self.network_manager.send_message(
+                    self.current_contact.uid, content, message_id, timestamp
+                ):
+                    # Store message
+                    msg = MessageModel(
+                        contact_uid=self.current_contact.uid,
+                        content=content,
+                        sent_by_me=True,
+                        timestamp=timestamp,
+                        message_id=message_id
+                    )
+                    self.message_store.add_message(msg)
+
+                    # Update UI
+                    chat_view = self.query_one(ChatView)
+                    chat_view.add_message(msg, self.identity.uid, self.contact_manager)
+
+                    message_input.value = ""
+                else:
+                    self.notify("Failed to send message - Not connected", severity="error")
+
+            elif self.current_group:
+                # Send group message
+                message_id = crypto.generate_secure_token(16)
+                timestamp = datetime.now().isoformat()
+
+                sent_count = self.network_manager.send_group_message(
+                    self.current_group.group_id, content, message_id, timestamp
                 )
-                self.message_store.add_message(msg)
+                
+                if sent_count > 0:
+                    # Store message
+                    msg = MessageModel(
+                        contact_uid=self.current_group.group_id,
+                        content=content,
+                        sent_by_me=True,
+                        timestamp=timestamp,
+                        message_id=message_id,
+                        group_id=self.current_group.group_id,
+                        sender_uid=self.identity.uid
+                    )
+                    self.message_store.add_message(msg)
 
-                # Update UI
-                chat_view = self.query_one(ChatView)
-                chat_view.add_message(msg, self.identity.uid, self.contact_manager)
+                    # Update UI
+                    chat_view = self.query_one(ChatView)
+                    chat_view.add_message(msg, self.identity.uid, self.contact_manager)
 
-                message_input.value = ""
-            else:
-                self.notify("Failed to send message", severity="error")
-
-        elif self.current_group:
-            # Send group message
-            message_id = crypto.generate_secure_token(16)
-            timestamp = datetime.now().isoformat()
-
-            if self.network_manager.send_group_message(
-                self.current_group.group_id, content, message_id, timestamp
-            ) > 0:
-                # Store message
-                msg = MessageModel(
-                    contact_uid=self.current_group.group_id,
-                    content=content,
-                    sent_by_me=True,
-                    timestamp=timestamp,
-                    message_id=message_id,
-                    group_id=self.current_group.group_id,
-                    sender_uid=self.identity.uid
-                )
-                self.message_store.add_message(msg)
-
-                # Update UI
-                chat_view = self.query_one(ChatView)
-                chat_view.add_message(msg, self.identity.uid, self.contact_manager)
-
-                message_input.value = ""
-            else:
-                self.notify("Failed to send group message", severity="error")
+                    message_input.value = ""
+                    self.notify(f"Message sent to {sent_count} member(s)", severity="information")
+                else:
+                    self.notify("Failed to send group message - No members online", severity="error")
+        except Exception as e:
+            self.notify(f"Error sending message: {str(e)}", severity="error")
 
     def action_add_contact(self) -> None:
         """Show add contact screen."""
@@ -1475,6 +1458,12 @@ class JarvisApp(App):
             contact_list = self.query_one(ContactList)
             contact_list.refresh_contacts()
             self.notify(f"Added contact: {result.username}", severity="information")
+            
+            # Automatically try to connect to the new contact
+            if self.network_manager:
+                self.notify(f"Attempting to connect to {result.username}...", severity="information")
+                self.run_worker(self._connect_to_contact(result))
+                self._update_connection_status()
 
     def action_create_group(self) -> None:
         """Show create group screen."""
@@ -1496,8 +1485,7 @@ class JarvisApp(App):
 
     async def _show_settings(self) -> None:
         """Worker to show settings screen."""
-        is_parent = self.session_manager.is_parent_session()
-        result = await self.push_screen_wait(SettingsScreen(self.identity, is_parent))
+        result = await self.push_screen_wait(SettingsScreen(self.identity))
         
         if result == "export_card":
             # Export contact card
@@ -1516,56 +1504,26 @@ class JarvisApp(App):
             except Exception as e:
                 self.notify(f"Error exporting contact card: {str(e)}", severity="error")
         
-        elif result == "export_identity":
-            # Export identity for creating child session
+        elif result == "export_account":
+            # Export complete account
             try:
-                export_dir = os.path.join(self.data_dir, 'identity_exports')
+                export_dir = os.path.join(self.data_dir, 'account_exports')
                 os.makedirs(export_dir, exist_ok=True)
                 
-                filename = f"{self.identity.username}_identity_{self.identity.uid[:8]}.jidentity"
+                filename = f"{self.identity.username}_account_{self.identity.uid[:8]}.jexport"
                 filepath = os.path.join(export_dir, filename)
                 
-                if self.identity_manager.export_identity(self.password, filepath):
-                    # Create child session record
-                    current_session = self.session_manager.get_current_session()
-                    if current_session:
-                        child_session = self.session_manager.create_child_session(
-                            self.identity.uid,
-                            current_session.session_id
-                        )
-                    self.notify(f"Identity exported to: {filepath}", severity="information")
-                    self.notify("This creates a child session for multi-device login", severity="information")
+                if self.identity_manager.export_complete_account(
+                    self.password, filepath,
+                    self.contact_manager, self.message_store, self.group_manager
+                ):
+                    self.notify(f"Account exported to: {filepath}", severity="information")
                 else:
-                    self.notify("Failed to export identity", severity="error")
+                    self.notify("Failed to export account", severity="error")
             except Exception as e:
-                self.notify(f"Error exporting identity: {str(e)}", severity="error")
-        
-        elif result == "manage_sessions":
-            # Show session management screen
-            current_session = self.session_manager.get_current_session()
-            if current_session:
-                session_result = await self.push_screen_wait(
-                    SessionManagementScreen(self.session_manager, current_session.session_id)
-                )
-                
-                if session_result:
-                    action, session_id = session_result
-                    if action == "disable":
-                        if self.session_manager.disable_session(session_id):
-                            self.notify("Session disabled", severity="information")
-                    elif action == "enable":
-                        if self.session_manager.enable_session(session_id):
-                            self.notify("Session enabled", severity="information")
-                    elif action == "delete":
-                        if self.session_manager.delete_session(session_id):
-                            self.notify("Session deleted", severity="information")
+                self.notify(f"Error exporting account: {str(e)}", severity="error")
         
         elif result == "delete_account":
-            # Only parent sessions can delete account
-            if not is_parent:
-                self.notify("Only parent sessions can delete accounts", severity="warning")
-                return
-            
             # Show delete account confirmation
             delete_result = await self.push_screen_wait(
                 DeleteAccountScreen(self.identity, self.password)

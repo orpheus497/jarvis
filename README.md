@@ -79,7 +79,7 @@ Your conversations remain completely under your control.
 ### Privacy & Data Control
 
 *   **Account Deletion:** Complete account and data deletion with password confirmation
-*   **Account Export:** Export complete parent account including identity, contacts, messages, and groups (parent sessions only, when no child sessions exist)
+*   **Account Export:** Export complete account including identity, contacts, messages, and groups
 *   **Data Management:** Delete individual contacts, messages, or groups
 *   **Secure Wipe:** All cryptographic keys and sensitive data removed on deletion
 *   **User Control:** Full control over your data at all times
@@ -152,10 +152,10 @@ python -m jarvis
 
 **Requirements:** 
 - Python 3.8 or higher
-- textual (MIT License)
-- cryptography (Apache 2.0/BSD License)
-- argon2-cffi (MIT License)
-- rich (MIT License)
+- textual >= 0.47.0 (MIT License)
+- cryptography >= 42.0.4 (Apache 2.0/BSD License) - with security fixes
+- argon2-cffi >= 23.1.0 (MIT License)
+- rich >= 13.7.0 (MIT License)
 
 All dependencies are installed automatically by the setup scripts.
 
@@ -191,18 +191,57 @@ rmdir /s /q "%APPDATA%\Jarvis"
 ### First-Time Setup
 
 1.  Launch Jarvis using the launcher script or `jarvis` command.
-2.  Choose "Create Identity".
-3.  Enter your username and master password.
-4.  Set your listen port (default: 5000).
-5.  **Save your UID** - you'll share this with contacts.
+2.  Read the welcome screen carefully - it contains important information.
+3.  Choose "Create Identity".
+4.  Enter your username (visible to contacts) and a strong master password.
+5.  Set your listen port (default: 5000).
+6.  **Save your UID** - you'll share this with contacts to allow them to add you.
 
-**⚠️ IMPORTANT:** Your master password cannot be recovered. If you forget it, your identity is permanently inaccessible.
+**⚠️ CRITICAL:** Your master password cannot be recovered. If you forget it, your identity is permanently inaccessible. Write it down in a secure location.
+
+**🔑 Understanding Your Listen Port:**
+- This port is used for incoming P2P connections from contacts
+- Must be open in your firewall
+- May require port forwarding on your router for Internet connections
+- Each instance of Jarvis must use a different port on the same machine
+
+### Connecting to Contacts
+
+**How Jarvis Establishes Connections:**
+
+Jarvis automatically connects to all your contacts when you log in. For connections to work:
+
+1. **Both devices must be running Jarvis** and logged in
+2. **Network connectivity** must exist between devices:
+   - Same device (localhost): Both instances can connect via 127.0.0.1
+   - Same LAN: Use local IP addresses (192.168.x.x or 10.x.x.x)
+   - Over Internet: Both need public IPs or port forwarding configured
+3. **Firewalls must allow** the listen port (default: 5000)
+4. **Each contact must have** the other's correct host information
+
+**Connection Status Indicators:**
+- **Green dot (●)**: Contact is online and connected - messages will deliver instantly
+- **Red dot (●)**: Contact is offline or not reachable - messages will queue
+- **Status display**: Shows "X/Y online" where X is connected and Y is total contacts
+
+**Troubleshooting Connection Issues:**
+
+If contacts don't connect:
+1. Verify both devices are running Jarvis and logged in
+2. Check the host field contains the correct IP address or hostname
+3. Verify the port number matches the contact's listen port
+4. Test network connectivity with `ping` or `telnet` to the host:port
+5. Ensure firewalls allow incoming connections on the listen port
+6. For Internet connections, verify port forwarding is configured
+7. Check the connection status display for real-time connection information
 
 ### Adding Contacts
 
-**Method 1: Link Code (fastest)**
+**Method 1: Link Code (fastest and recommended)**
 1.  Press `Ctrl+C` or click "Add Contact".
-2.  Paste a link code (jarvis://...) and press Enter.
+2.  Ask your contact to go to Settings and copy their link code.
+3.  Paste the link code (jarvis://...) and press "Add Contact".
+4.  Jarvis will automatically attempt to connect to the contact.
 
 **Method 2: Contact Card File**
 1.  Press `Ctrl+C` or click "Add Contact".
@@ -215,16 +254,19 @@ rmdir /s /q "%APPDATA%\Jarvis"
     *   **UID:** Contact's unique identifier (32 hex characters)
     *   **Username:** Display name
     *   **Public Key:** Contact's public key (base64)
-    *   **Host:** IP address or hostname
-    *   **Port:** Listen port (default: 5000)
+    *   **Host:** IP address or hostname of contact's device
+    *   **Port:** Contact's listen port (default: 5000)
 3.  **Verify fingerprint** with contact through a trusted channel (phone call, in person, etc.)
 4.  Mark contact as verified after fingerprint confirmation.
 
+**⚠️ Important:** Always verify the fingerprint with your contact through a separate trusted channel to prevent man-in-the-middle attacks.
+
 ### Sharing Your Identity
 
-**Method 1: Link Code**
-*   Go to Settings (`Ctrl+S`) and copy the link code
+**Method 1: Link Code (easiest)**
+*   Go to Settings (`Ctrl+S`) and click "Copy Link Code"
 *   Share via any messaging app or email
+*   Contact can paste this code directly in Jarvis
 
 **Method 2: Contact Card File**
 *   Go to Settings (`Ctrl+S`) and click "Export Contact Card"
@@ -238,31 +280,20 @@ Share this information with contacts who want to add you:
 *   **Host:** Your IP address or hostname
 *   **Port:** Your listen port
 
-### Multi-Device Login (Parent-Child Sessions)
+### Exporting Your Account
 
-**Exporting Identity for Another Device:**
-1.  Go to Settings (`Ctrl+S`) on your parent session
-2.  Click "Export Identity"
-3.  Identity file (.jidentity) is saved to identity_exports directory
-4.  Transfer file to other device securely (USB drive, secure file transfer)
-5.  On other device, import the identity file to create a child session
+You can export your complete account data (identity, contacts, messages, and groups) for backup purposes:
 
-**Parent Session Features:**
-*   Full account control including deletion
-*   Can manage child sessions via "Manage Sessions" button
-*   View IP addresses of child sessions
-*   Enable/disable child sessions
-*   Delete child sessions remotely
-
-**Child Session Features:**
-*   Full messaging and contact management
-*   Cannot delete account (parent only)
-*   Linked to parent for security monitoring
+1.  Go to Settings (`Ctrl+S`)
+2.  Click "Export Account"
+3.  Account file (.jexport) is saved to account_exports directory
+4.  Transfer file securely for backup
+5.  Keep the file encrypted and secure
 
 **Benefits:**
-*   Maintain strong P2P server connections across multiple devices
-*   Always reachable when one device is online
-*   Parent can monitor and control all sessions for security
+*   Complete backup of your account
+*   Transfer to a different device
+*   Disaster recovery
 
 ### Daily Use
 
@@ -275,10 +306,9 @@ Share this information with contacts who want to add you:
 *   **Delete Contact/Group:** Press `Ctrl+D` or use `Ctrl+I` then click Delete button
 *   **Copy Data:** All UIDs, fingerprints, and link codes have copy buttons
 *   **Export Contact Card:** From Settings screen (only your own card)
-*   **Export Identity:** From Settings (parent sessions only) for multi-device login
-*   **Manage Sessions:** View and control child sessions (parent sessions only)
+*   **Export Account:** From Settings - backup complete account data
 *   **Lock App:** Press `Ctrl+L` to lock the application (keeps connections active)
-*   **Delete Account:** Access via Settings menu - removes all data permanently (parent only)
+*   **Delete Account:** Access via Settings menu - removes all data permanently
 *   **Quit:** Press `Ctrl+Q` or `Escape` to exit
 
 ### Keyboard Shortcuts
@@ -540,29 +570,56 @@ This project was designed and originated by **orpheus497**.
 
 ### Dependencies
 
-*   **Textual** - Terminal UI framework (MIT License)  
-    Created by Will McGugan and Textualize.io team
-    
-*   **cryptography** - Cryptographic primitives (Apache 2.0/BSD License)  
-    Created by the Python Cryptographic Authority
-    
-*   **argon2-cffi** - Argon2 password hashing (MIT License)  
-    Created by Hynek Schlawack
-    
-*   **Rich** - Terminal formatting (MIT License)  
-    Created by Will McGugan
+Jarvis relies on the following open-source projects, and we are grateful to their creators and maintainers:
 
-*   **pyperclip** - Cross-platform clipboard support (MIT License)  
-    Created by Al Sweigart
+*   **Textual** (MIT License)  
+    Terminal UI framework  
+    Created by Will McGugan and the Textualize.io team  
+    https://github.com/Textualize/textual
+    
+*   **cryptography** (Apache 2.0/BSD License)  
+    Cryptographic primitives and protocols  
+    Created by the Python Cryptographic Authority  
+    https://github.com/pyca/cryptography
+    
+*   **argon2-cffi** (MIT License)  
+    Argon2 password hashing implementation  
+    Created by Hynek Schlawack  
+    https://github.com/hynek/argon2-cffi
+    
+*   **Rich** (MIT License)  
+    Terminal formatting and rendering library  
+    Created by Will McGugan  
+    https://github.com/Textualize/rich
 
-### Standards
+*   **pyperclip** (BSD 3-Clause License)  
+    Cross-platform clipboard support  
+    Created by Al Sweigart  
+    https://github.com/asweigart/pyperclip
 
-*   **Keep a Changelog** - For standardized changelog format
-*   **Semantic Versioning** - For version numbering
-*   **X25519** - Elliptic curve Diffie-Hellman (RFC 7748)
-*   **AES-GCM** - Authenticated encryption (NIST SP 800-38D)
-*   **ChaCha20-Poly1305** - Authenticated encryption (RFC 8439)
-*   **Argon2** - Password hashing (RFC 9106)
+All dependencies are free, open-source, and royalty-free. No external APIs or closed-source software is required.
+
+### Standards and Protocols
+
+This project implements industry-standard cryptographic protocols and best practices:
+
+*   **Keep a Changelog** - For standardized changelog format  
+    https://keepachangelog.com/
+    
+*   **Semantic Versioning** - For version numbering  
+    https://semver.org/
+    
+*   **X25519** - Elliptic curve Diffie-Hellman key exchange (RFC 7748)  
+    IETF standard for secure key agreement
+    
+*   **AES-GCM** - Authenticated encryption with associated data (NIST SP 800-38D)  
+    NIST-approved authenticated encryption mode
+    
+*   **ChaCha20-Poly1305** - Authenticated encryption (RFC 8439)  
+    IETF standard for authenticated encryption
+    
+*   **Argon2** - Memory-hard password hashing (RFC 9106)  
+    IETF standard for password-based key derivation
 
 ### Inspiration
 
@@ -605,7 +662,6 @@ Future considerations (not promises):
 - [ ] File transfers (encrypted P2P file sharing)
 - [ ] Mobile apps (native Android/iOS)
 - [ ] Tor integration (anonymous connections)
-- [ ] Multi-device sync (encrypted)
 - [ ] Contact discovery (via fingerprint)
 
 ---

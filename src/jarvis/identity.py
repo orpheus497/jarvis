@@ -151,59 +151,25 @@ class IdentityManager:
         self.save_identity(new_password)
         return True
     
-    def export_identity(self, password: str, export_path: str) -> bool:
-        """
-        Export identity to file for multi-session support.
-        Creates an encrypted identity file that can be used to create a child session.
-        Returns True if successful.
-        """
-        # Verify password first
-        if not self.load_identity(password):
-            return False
-        
-        try:
-            identity_data = self.identity.to_dict()
-            encrypted_data = crypto.encrypt_identity_file(identity_data, password)
-            
-            with open(export_path, 'w') as f:
-                json.dump(encrypted_data, f, indent=2)
-            
-            return True
-        except Exception:
-            return False
-    
     def export_complete_account(self, password: str, export_path: str, 
-                                session_manager, contact_manager, message_store, 
+                                contact_manager, message_store, 
                                 group_manager) -> bool:
         """
-        Export complete parent account including identity, contacts, messages, and groups.
-        Can only be done if there are no child sessions.
+        Export complete account including identity, contacts, messages, and groups.
         
         Args:
             password: Account password for verification
             export_path: Path to save the complete export
-            session_manager: SessionManager instance to check for child sessions
             contact_manager: ContactManager instance for exporting contacts
             message_store: MessageStore instance for exporting messages
             group_manager: GroupManager instance for exporting groups
             
         Returns:
-            True if successful, False if password is incorrect or child sessions exist
+            True if successful, False if password is incorrect
         """
         # Verify password first
         if not self.load_identity(password):
             return False
-        
-        # Check if this is a parent session and has no child sessions
-        if session_manager.current_session_id:
-            current_session = session_manager.get_current_session()
-            if not current_session or not current_session.is_parent:
-                return False  # Only parent sessions can export complete account
-            
-            # Check for child sessions
-            child_sessions = session_manager.get_child_sessions(session_manager.current_session_id)
-            if child_sessions:
-                return False  # Cannot export if child sessions exist
         
         try:
             # Collect all account data
@@ -214,8 +180,7 @@ class IdentityManager:
                 'identity': self.identity.to_dict(),
                 'contacts': {uid: contact.to_dict() for uid, contact in contact_manager.contacts.items()},
                 'groups': {},
-                'messages': {},
-                'sessions': {sid: session.to_dict() for sid, session in session_manager.sessions.items()}
+                'messages': {}
             }
             
             # Export groups if group_manager has the necessary methods
@@ -236,21 +201,6 @@ class IdentityManager:
             return True
         except Exception:
             return False
-    
-    def import_identity(self, import_path: str, password: str) -> Optional[Identity]:
-        """
-        Import identity from exported file.
-        Returns identity if successful, None otherwise.
-        """
-        try:
-            with open(import_path, 'r') as f:
-                encrypted_data = json.load(f)
-            
-            identity_data = crypto.decrypt_identity_file(encrypted_data, password)
-            identity = Identity.from_dict(identity_data)
-            return identity
-        except Exception:
-            return None
     
     def delete_identity(self, password: str) -> bool:
         """
