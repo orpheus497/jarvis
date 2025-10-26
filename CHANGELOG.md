@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+- Multi-device login system (parent-child sessions)
+  - Removed SessionManagementScreen UI
+  - Removed session type (parent/child) distinction
+  - Removed identity export/import for child sessions
+  - Removed "Export Identity" and "Manage Sessions" buttons from Settings
+  - Simplified SessionManager to handle single session type
+  - Simplified Identity export to complete account backup only
+
+### Changed
+- Settings screen simplified to remove session type display
+- Export functionality changed to "Export Account" for complete account backup
+- SessionManager API simplified (removed parent-child methods)
+- IdentityManager export methods simplified
+- Account deletion no longer restricted to parent sessions
+
 ## [1.1.0] - 2025-10-26
 
 ### Added
@@ -16,10 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic connection establishment on login
   - Connects to all contacts automatically when user logs in
   - Establishes group connections for all group members
-  - Maintains parent-child session connections
 - Complete account export functionality
-  - Export entire parent account including identity, contacts, messages, and groups
-  - Only available for parent sessions without child sessions
+  - Export entire account including identity, contacts, messages, and groups
   - Encrypted export preserving all account data
 - Connection status tracking for contacts and groups
   - `get_connection_status()` method for individual contacts
@@ -31,7 +47,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Delete all contacts
   - Delete all messages (direct and group)
   - Delete all groups
-  - Only parent sessions can delete accounts
 - Lock feature (Ctrl+L) to secure the application when stepping away
   - Keeps network connections active while UI is locked
   - Password verification required to unlock
@@ -43,18 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Delete individual groups via Ctrl+I then Delete button or Ctrl+D
   - View contact status, host, port, fingerprint, and verification status
   - View group members, creation date, and description
-- Parent-child session management system for multi-device login
-  - SessionManager class for tracking and managing active sessions
-  - Parent session can create child sessions via identity export
-  - Parent session can view, enable, disable, and delete child sessions
-  - Child sessions have full functionality except account deletion
-  - Session tracking includes IP address, enabled status, and activity timestamps
-  - SessionManagementScreen UI for viewing and managing child sessions
-- Identity export/import system (.jidentity format)
-  - Export identity from Settings screen (parent sessions only)
-  - Creates encrypted identity file for multi-device login
-  - Import identity on other devices to create child session
-  - Child sessions linked to parent for security monitoring
 - Contact card file sharing system (.jcard format)
   - ContactCardManager utility class for import/export operations
   - Export own identity as contact card from Settings screen
@@ -75,16 +78,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Ctrl+I to view contact or group details
   - Ctrl+D to delete current contact or group
 - Complete account and data wipe functionality
-- Delete Account button in Settings screen (parent sessions only)
+- Delete Account button in Settings screen
 - Comprehensive delete account dialog with warnings
 
 ### Changed
-- Settings screen displays session type (Parent or Child)
 - Settings screen displays UID and fingerprint in copyable input fields
 - Settings screen includes Copy UID and Copy Fingerprint buttons
 - Settings screen includes Export Contact Card button
-- Settings screen includes Export Identity button (parent sessions only)
-- Settings screen includes Manage Sessions button (parent sessions only)
+- Settings screen includes Export Account button for complete backup
 - Contact Details screen no longer exports other contacts' cards
 - Add Contact screen includes Import Contact Card button
 - Add Contact screen includes Paste from Clipboard button
