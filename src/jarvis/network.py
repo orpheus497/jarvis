@@ -458,6 +458,11 @@ class P2PServer:
 class NetworkManager:
     """Manages all P2P connections and group chat routing with automatic reconnection."""
     
+    # Configuration constants
+    THREAD_JOIN_TIMEOUT = 2.0  # Timeout for thread shutdown
+    RECONNECT_INTERVAL = 60  # Reconnection attempt interval in seconds
+    MANAGER_LOOP_INTERVAL = 10  # Connection manager check interval in seconds
+    
     def __init__(self, identity: crypto.IdentityKeyPair, my_uid: str, 
                  my_username: str, listen_port: int, contact_manager):
         self.identity = identity
@@ -506,7 +511,7 @@ class NetworkManager:
         self.server.stop()
         
         if self.connection_manager_thread:
-            self.connection_manager_thread.join(timeout=2.0)
+            self.connection_manager_thread.join(timeout=self.THREAD_JOIN_TIMEOUT)
     
     def _connection_manager_loop(self):
         """
@@ -515,17 +520,16 @@ class NetworkManager:
         - Attempts automatic reconnection to offline contacts
         - Handles stale connections
         """
-        reconnect_interval = 60  # Try to reconnect every 60 seconds
         last_reconnect_attempt = time.time()
         
         while self.running:
-            time.sleep(10)  # Check every 10 seconds
+            time.sleep(self.MANAGER_LOOP_INTERVAL)
             
             if not self.auto_reconnect_enabled:
                 continue
             
             # Check if it's time to attempt reconnections
-            if time.time() - last_reconnect_attempt < reconnect_interval:
+            if time.time() - last_reconnect_attempt < self.RECONNECT_INTERVAL:
                 continue
             
             last_reconnect_attempt = time.time()
@@ -539,10 +543,13 @@ class NetworkManager:
                     continue
                 
                 # Attempt to connect in background
+                # Silently fail - connection issues are expected and will retry later
                 try:
                     self.connect_to_peer(contact)
+                except (ConnectionError, socket.timeout, OSError):
+                    pass  # Expected network errors during reconnection attempts
                 except Exception:
-                    pass  # Silently fail, will try again later
+                    pass  # Catch-all for any unexpected errors
             
             # Clean up disconnected connections
             with self.lock:
