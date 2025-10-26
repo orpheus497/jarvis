@@ -219,6 +219,9 @@ Share this information with contacts who want to add you:
 *   **Status Indicators:** Green dot = online, Red dot = offline
 *   **Unread Messages:** Yellow badge shows unread count
 *   **Settings:** Press `Ctrl+S` to access settings
+*   **Contact Info:** Press `Ctrl+I` to view contact or group details
+*   **Delete Contact/Group:** Press `Ctrl+D` or use `Ctrl+I` then click Delete button
+*   **Copy Data:** All UIDs, fingerprints, and link codes have copy buttons
 *   **Lock App:** Press `Ctrl+L` to lock the application (keeps connections active)
 *   **Delete Account:** Access via Settings menu - removes all data permanently
 *   **Quit:** Press `Ctrl+Q` or `Escape` to exit
@@ -228,6 +231,8 @@ Share this information with contacts who want to add you:
 *   `Ctrl+C` - Add Contact
 *   `Ctrl+G` - New Group
 *   `Ctrl+S` - Settings
+*   `Ctrl+I` - Contact/Group Info
+*   `Ctrl+D` - Delete Current Contact/Group
 *   `Ctrl+L` - Lock Application
 *   `Ctrl+Q` - Quit
 *   `Enter` - Send Message

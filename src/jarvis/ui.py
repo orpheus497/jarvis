@@ -262,6 +262,7 @@ class AddContactScreen(ModalScreen):
             yield Label("Add Contact", id="dialog-title")
             yield Label("Paste Link Code or enter details manually:", id="dialog-subtitle")
             yield Input(placeholder="Link Code (jarvis://...)", id="link-code-input")
+            yield Button("Paste from Clipboard", variant="default", id="paste-btn")
             yield Label("Or enter details manually:", id="manual-label")
             yield Input(placeholder="Username", id="username-input")
             yield Input(placeholder="UID (32 hex characters)", id="uid-input")
@@ -276,7 +277,15 @@ class AddContactScreen(ModalScreen):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press."""
-        if event.button.id == "add-btn":
+        if event.button.id == "paste-btn":
+            import pyperclip
+            try:
+                clipboard_text = pyperclip.paste()
+                link_code_input = self.query_one("#link-code-input", Input)
+                link_code_input.value = clipboard_text.strip()
+            except Exception:
+                pass
+        elif event.button.id == "add-btn":
             link_code_input = self.query_one("#link-code-input", Input)
             link_code = link_code_input.value.strip()
 
@@ -580,9 +589,13 @@ class SettingsScreen(ModalScreen):
         with Container(id="settings-dialog"):
             yield Label("Settings", id="dialog-title")
             yield Label(f"Username: {self.identity.username}", id="username-label")
-            yield Label(f"UID: {self.identity.uid}", id="uid-label")
+            yield Label(f"UID:", id="uid-label")
+            yield Input(value=self.identity.uid, id="uid-display", disabled=True)
+            yield Button("Copy UID", variant="default", id="copy-uid-btn")
             yield Label(f"Fingerprint:", id="fp-label")
-            yield Label(format_fingerprint(self.identity.fingerprint), id="fp-value")
+            yield Input(value=format_fingerprint(self.identity.fingerprint), 
+                       id="fp-display", disabled=True)
+            yield Button("Copy Fingerprint", variant="default", id="copy-fp-btn")
             yield Label(f"Listen Port: {self.identity.listen_port}", id="port-label")
             yield Label("", id="spacer")
             yield Label("Link Code (share this to add you as a contact):", id="link-label")
@@ -602,8 +615,9 @@ class SettingsScreen(ModalScreen):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press."""
+        import pyperclip
+        
         if event.button.id == "copy-btn":
-            import pyperclip
             link_code_input = self.query_one("#link-code-display", Input)
             try:
                 pyperclip.copy(link_code_input.value)
@@ -612,8 +626,136 @@ class SettingsScreen(ModalScreen):
                 )
             except Exception:
                 pass
+        elif event.button.id == "copy-uid-btn":
+            try:
+                pyperclip.copy(self.identity.uid)
+                self.query_one("#uid-label").update("UID: (copied!)")
+            except Exception:
+                pass
+        elif event.button.id == "copy-fp-btn":
+            try:
+                pyperclip.copy(self.identity.fingerprint)
+                self.query_one("#fp-label").update("Fingerprint: (copied!)")
+            except Exception:
+                pass
         elif event.button.id == "delete-account-btn":
             self.dismiss("delete_account")
+        elif event.button.id == "close-btn":
+            self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        """Cancel and close."""
+        self.dismiss(None)
+
+
+class ContactDetailsScreen(ModalScreen):
+    """Screen showing contact details with management options."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, contact: Contact, contact_manager: ContactManager, 
+                 message_store: MessageStore):
+        super().__init__()
+        self.contact = contact
+        self.contact_manager = contact_manager
+        self.message_store = message_store
+
+    def compose(self) -> ComposeResult:
+        """Compose the screen layout."""
+        with Container(id="contact-details-dialog"):
+            yield Label("Contact Details", id="dialog-title")
+            yield Label(f"Username: {self.contact.username}", id="contact-username")
+            yield Label(f"UID:", id="uid-label")
+            yield Input(value=self.contact.uid, id="uid-display", disabled=True)
+            yield Label(f"Fingerprint:", id="fp-label")
+            yield Input(value=format_fingerprint(self.contact.fingerprint), 
+                       id="fp-display", disabled=True)
+            yield Label(f"Host: {self.contact.host}:{self.contact.port}", id="host-label")
+            yield Label(f"Status: {self.contact.status}", id="status-label")
+            yield Label(f"Verified: {'Yes' if self.contact.verified else 'No'}", 
+                       id="verified-label")
+            yield Label("", id="spacer")
+            yield Horizontal(
+                Button("Copy UID", variant="primary", id="copy-uid-btn"),
+                Button("Copy Fingerprint", variant="primary", id="copy-fp-btn"),
+                Button("Delete Contact", variant="error", id="delete-contact-btn"),
+                Button("Close", variant="default", id="close-btn"),
+                id="button-row"
+            )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        import pyperclip
+        
+        if event.button.id == "copy-uid-btn":
+            try:
+                pyperclip.copy(self.contact.uid)
+                self.query_one("#uid-label").update("UID: (copied!)")
+            except Exception:
+                pass
+        elif event.button.id == "copy-fp-btn":
+            try:
+                pyperclip.copy(self.contact.fingerprint)
+                self.query_one("#fp-label").update("Fingerprint: (copied!)")
+            except Exception:
+                pass
+        elif event.button.id == "delete-contact-btn":
+            self.dismiss("delete")
+        elif event.button.id == "close-btn":
+            self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        """Cancel and close."""
+        self.dismiss(None)
+
+
+class GroupDetailsScreen(ModalScreen):
+    """Screen showing group details with management options."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, group: Group, group_manager: GroupManager, 
+                 message_store: MessageStore):
+        super().__init__()
+        self.group = group
+        self.group_manager = group_manager
+        self.message_store = message_store
+
+    def compose(self) -> ComposeResult:
+        """Compose the screen layout."""
+        with Container(id="group-details-dialog"):
+            yield Label("Group Details", id="dialog-title")
+            yield Label(f"Name: {self.group.name}", id="group-name")
+            yield Label(f"Group ID:", id="gid-label")
+            yield Input(value=self.group.group_id, id="gid-display", disabled=True)
+            yield Label(f"Description: {self.group.description or 'None'}", 
+                       id="desc-label")
+            yield Label(f"Members: {len(self.group.members)}", id="members-label")
+            yield Label(f"Created: {self.group.created_at[:10]}", id="created-label")
+            yield Label("", id="spacer")
+            yield Horizontal(
+                Button("Copy Group ID", variant="primary", id="copy-gid-btn"),
+                Button("Delete Group", variant="error", id="delete-group-btn"),
+                Button("Close", variant="default", id="close-btn"),
+                id="button-row"
+            )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        import pyperclip
+        
+        if event.button.id == "copy-gid-btn":
+            try:
+                pyperclip.copy(self.group.group_id)
+                self.query_one("#gid-label").update("Group ID: (copied!)")
+            except Exception:
+                pass
+        elif event.button.id == "delete-group-btn":
+            self.dismiss("delete")
         elif event.button.id == "close-btn":
             self.dismiss(None)
 
@@ -712,7 +854,7 @@ class JarvisApp(App):
     }
 
     #identity-dialog, #add-contact-dialog, #create-group-dialog, #settings-dialog, 
-    #lock-dialog, #delete-account-dialog {
+    #lock-dialog, #delete-account-dialog, #contact-details-dialog, #group-details-dialog {
         align: center middle;
         width: 80;
         height: auto;
@@ -861,6 +1003,8 @@ class JarvisApp(App):
         Binding("ctrl+g", "create_group", "New Group"),
         Binding("ctrl+s", "settings", "Settings"),
         Binding("ctrl+l", "lock_app", "Lock"),
+        Binding("ctrl+i", "contact_info", "Contact Info"),
+        Binding("ctrl+d", "delete_current", "Delete"),
         Binding("ctrl+q", "quit", "Quit"),
     ]
 
@@ -1181,6 +1325,77 @@ class JarvisApp(App):
         else:
             # User cancelled - could optionally do something here
             pass
+    
+    def action_contact_info(self) -> None:
+        """Show info for current contact or group."""
+        self.run_worker(self._show_contact_info())
+    
+    async def _show_contact_info(self) -> None:
+        """Worker to show contact or group info."""
+        if self.current_contact:
+            result = await self.push_screen_wait(
+                ContactDetailsScreen(self.current_contact, self.contact_manager, 
+                                   self.message_store)
+            )
+            
+            if result == "delete":
+                # Confirm and delete contact
+                if self.contact_manager.remove_contact(self.current_contact.uid):
+                    # Delete conversation
+                    self.message_store.delete_conversation(self.current_contact.uid)
+                    
+                    # Disconnect if connected
+                    if self.network_manager:
+                        self.network_manager.disconnect_from_peer(self.current_contact.uid)
+                    
+                    # Clear current selection
+                    self.current_contact = None
+                    
+                    # Refresh UI
+                    contact_list = self.query_one(ContactList)
+                    contact_list.refresh_contacts()
+                    
+                    self.query_one("#chat-header", Label).update(
+                        "Select a contact or group to start chatting"
+                    )
+                    chat_view = self.query_one(ChatView)
+                    chat_view.display_messages([], self.identity.uid, self.contact_manager)
+                    
+                    self.notify("Contact deleted successfully", severity="information")
+        
+        elif self.current_group:
+            result = await self.push_screen_wait(
+                GroupDetailsScreen(self.current_group, self.group_manager, 
+                                 self.message_store)
+            )
+            
+            if result == "delete":
+                # Confirm and delete group
+                if self.group_manager.delete_group(self.current_group.group_id):
+                    # Delete conversation
+                    self.message_store.delete_group_conversation(self.current_group.group_id)
+                    
+                    # Clear current selection
+                    self.current_group = None
+                    
+                    # Refresh UI
+                    contact_list = self.query_one(ContactList)
+                    contact_list.refresh_contacts()
+                    
+                    self.query_one("#chat-header", Label).update(
+                        "Select a contact or group to start chatting"
+                    )
+                    chat_view = self.query_one(ChatView)
+                    chat_view.display_messages([], self.identity.uid, self.contact_manager)
+                    
+                    self.notify("Group deleted successfully", severity="information")
+        else:
+            self.notify("No contact or group selected", severity="warning")
+    
+    def action_delete_current(self) -> None:
+        """Delete current contact or group."""
+        # Just call the contact info action which has delete option
+        self.action_contact_info()
 
     def action_quit(self) -> None:
         """Quit the application."""

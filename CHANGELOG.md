@@ -17,18 +17,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Keeps network connections active while UI is locked
   - Password verification required to unlock
   - Visual lock screen with animated banner
-- Enhanced data management capabilities
-  - Individual contact deletion via ContactManager
-  - Individual group deletion via GroupManager
-  - Conversation deletion support
-  - Complete account and data wipe functionality
+- Individual contact and group management
+  - ContactDetailsScreen for viewing and managing individual contacts
+  - GroupDetailsScreen for viewing and managing individual groups
+  - Delete individual contacts via Ctrl+I then Delete button or Ctrl+D
+  - Delete individual groups via Ctrl+I then Delete button or Ctrl+D
+  - View contact status, host, port, fingerprint, and verification status
+  - View group members, creation date, and description
+- Copy functionality throughout the application
+  - Copy UID from Settings screen
+  - Copy fingerprint from Settings screen
+  - Copy link code from Settings screen
+  - Copy contact UID from contact details
+  - Copy contact fingerprint from contact details
+  - Copy group ID from group details
+  - Paste from clipboard button in Add Contact screen
+- Keyboard shortcuts for contact and group management
+  - Ctrl+I to view contact or group details
+  - Ctrl+D to delete current contact or group
+- Complete account and data wipe functionality
 - Delete Account button in Settings screen
 - Comprehensive delete account dialog with warnings
 
 ### Changed
-- Settings screen now includes account deletion option
-- Enhanced keyboard shortcuts with lock feature (Ctrl+L)
-- Improved connection stability and background processing
+- Settings screen displays UID and fingerprint in copyable input fields
+- Settings screen includes Copy UID and Copy Fingerprint buttons
+- Add Contact screen includes Paste from Clipboard button
+- Keyboard shortcuts with lock feature (Ctrl+L), info (Ctrl+I), and delete (Ctrl+D)
+- Connection stability and background processing
 - Connection management runs in background threads
 - Simultaneous host/client P2P model ensures reliable connectivity
 - Online status detection based on active peer-to-peer connections
