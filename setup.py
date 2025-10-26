@@ -54,6 +54,7 @@ setup(
     entry_points={
         'console_scripts': [
             'jarvis=jarvis.__main__:main',
+            'jarvis-server=jarvis.server:main',
         ],
     },
 )
