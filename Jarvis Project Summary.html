@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jarvis Project Summary</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom scrollbar for a cleaner look */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b; /* slate-800 */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155; /* slate-700 */
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569; /* slate-600 */
+        }
+        .ascii-art {
+            font-family: 'Courier New', Courier, monospace;
+            white-space: pre;
+            line-height: 1.2;
+            font-size: 0.75rem; /* text-xs */
+            letter-spacing: 0.1em;
+            text-align: center;
+            color: #38bdf8; /* sky-500 */
+            text-shadow: 0 0 5px rgba(56, 189, 248, 0.3);
+        }
+        .slide {
+            min-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 4rem 2rem;
+            border-bottom: 1px solid #1e293b; /* slate-800 */
+        }
+        .slide-title {
+            @apply text-4xl font-bold text-sky-400 mb-4;
+        }
+        .slide-subtitle {
+            @apply text-xl text-slate-400 mb-12 text-center max-w-2xl;
+        }
+        .card {
+            @apply bg-slate-800 p-6 rounded-lg shadow-xl transition-all duration-300 hover:shadow-2xl hover:-translate-y-1;
+        }
+        .icon {
+            @apply w-8 h-8 text-sky-400;
+        }
+        .diagram-box {
+            @apply bg-slate-800 border-2 border-sky-700 p-4 rounded-lg text-center shadow-lg;
+        }
+        .diagram-arrow {
+            @apply text-slate-500 font-mono my-2 text-sm;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-200">
+
+    <!-- Main Container -->
+    <div class="w-full">
+
+        <!-- Slide 1: Hero -->
+        <div class="slide min-h-screen">
+            <div class="text-center">
+                <h1 class="text-7xl font-black text-white mb-4">
+                    Jarvis <span class="text-sky-400">🛡️</span>
+                </h1>
+                <p class="text-2xl text-slate-400 mb-10 max-w-2xl">
+                    A terminal-based, peer-to-peer, end-to-end encrypted messenger.
+                </p>
+                <div class="ascii-art">
+░        ░░░      ░░░       ░░░  ░░░░  ░░        ░░░      ░░
+▒▒▒▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒▒▒▒  ▒▒▒▒▒  ▒▒▒▒▒▒▒
+▓▓▓▓▓▓▓  ▓▓  ▓▓▓▓  ▓▓       ▓▓▓▓  ▓▓  ▓▓▓▓▓▓  ▓▓▓▓▓▓      ▓▓
+█  ████  ██        ██  ███  █████    ███████  ███████████  █
+██      ███  ████  ██  ████  █████  █████        ███      ██
+                </div>
+                <p class="mt-10 text-slate-500">Created by orpheus497</p>
+            </div>
+        </div>
+
+        <!-- Slide 2: Philosophy -->
+        <div class="slide bg-slate-950">
+            <h2 class="slide-title">Your Conversations. Your Control.</h2>
+            <p class="slide-subtitle">
+                Jarvis is built on a foundation of total user control and privacy.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 max-w-6xl">
+                <!-- No Cloud Card -->
+                <div class="card">
+                    <svg class="icon mb-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 22h.5c3.3 0 6-2.7 6-6s-2.7-6-6-6h-.5c-.3 0-.5 0-.8.1C15.4 6.3 12.9 4 9.5 4S3.6 6.3 2.3 10.1c-.3-.1-.5-.1-.8-.1H1.0C.4 10 0 10.4 0 11s.4 1 1 1h.5c.3 0 .5 0 .8.1.1.1.1.1.2.2C3.6 15.7 6.1 18 9.5 18s5.9-2.3 7.2-6.1c.1-.1.1-.1.2-.2.3-.1.5-.1.8-.1h.5c2.2 0 4 1.8 4 4s-1.8 4-4 4ZM2 16l20-10"></path></svg>
+                    <h3 class="text-lg font-bold text-white mb-2">No Cloud, No Servers</h3>
+                    <p class="text-slate-400 text-sm">Messages are transmitted directly between peers using TCP sockets. No central server to compromise or monitor.</p>
+                </div>
+                <!-- No Tracking Card -->
+                <div class="card">
+                    <svg class="icon mb-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><path d="m2 12 5 5"></path><path d="m7 17 5-5"></path><path d="m12 12 5-5"></path><path d="m17 7 5 5"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    <h3 class="text-lg font-bold text-white mb-2">No Tracking, No Telemetry</h3>
+                    <p class="text-slate-400 text-sm">No analytics, no usage tracking, and no error reporting. Your activity is your own, period.</p>
+                </div>
+                <!-- Total Privacy Card -->
+                <div class="card">
+                    <svg class="icon mb-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                    <h3 class="text-lg font-bold text-white mb-2">Total Privacy</h3>
+                    <p class="text-slate-400 text-sm">Only you and your intended contacts have the keys to read your messages.
+                    </p>
+                </div>
+                <!-- Supreme Encryption Card -->
+                <div class="card">
+                    <svg class="icon mb-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path><path d="M19 11V7a5 5 0 0 0-5.3-4.9"></path><path d="M12 16a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"></path></svg>
+                    <h3 class="text-lg font-bold text-white mb-2">Supreme Encryption</h3>
+                    <p class="text-slate-400 text-sm">A defense-in-depth, five-layer encryption model protects every single message you send.</p>
+                </div>
+                <!-- Open Source Card -->
+                <div class="card">
+                    <svg class="icon mb-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-1.5 6-6.5a5.4 5.4 0 0 0-1.5-3.75a5.2 5.2 0 0 0-.1-3.75s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a5.2 5.2 0 0 0-.1 3.75A5.4 5.4 0 0 0 3.8 11c0 5 3 6.5 6 6.5a4.8 4.8 0 0 0-1 3.5v4"></path></svg>
+                    <h3 class="text-lg font-bold text-white mb-2">Open Source</h3>
+                    <p class="text-slate-400 text-sm">All code is open, auditable, and free to use. Trust through transparency.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 3: Core Features -->
+        <div class="slide">
+            <h2 class="slide-title">Core Features</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl w-full">
+                <!-- Security Card -->
+                <div class="card col-span-1 md:col-span-2 lg:col-span-3 bg-sky-800/30 border border-sky-700">
+                    <h3 class="text-xl font-bold text-sky-300 mb-2">Uncompromising Security</h3>
+                    <ul class="list-disc list-inside text-sky-100/90 space-y-1">
+                        <li>**Five-Layer Encryption** (AES & ChaCha20-Poly1305)</li>
+                        <li>**Modern Key Exchange** (X25519)</li>
+                        <li>**Strong Password Protection** (Argon2id)</li>
+                        <li>**MITM Protection** (SHA-256 Fingerprints)</li>
+                    </ul>
+                </div>
+                <!-- P2P Card -->
+                <div class="card">
+                    <svg class="icon mb-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    <h3 class="text-lg font-bold text-white mb-2">Direct P2P Connections</h3>
+                    <p class="text-slate-400 text-sm">No servers. No intermediaries. Just you and your contacts.</p>
+                </div>
+                <!-- Cross-Platform Card -->
+                <div class="card">
+                    <svg class="icon mb-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                    <h3 class="text-lg font-bold text-white mb-2">Cross-Platform</h3>
+                    <p class="text-slate-400 text-sm">Works seamlessly on Linux, Windows, macOS, and Termux (Android).</p>
+                </div>
+                <!-- Background Daemon Card -->
+                <div class="card">
+                    <svg class="icon mb-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2-2V3c0-1.1.9-2 2-2h0a2 2 0 0 1 2 2v4"></path><path d="M18 13a2 2 0 0 1-2-2V7"></path><path d="M6 13a2 2 0 0 0 2-2V7"></path><path d="M10 9a2 2 0 0 0 2-2V3"></path><path d="M21 16v-1a2 2 0 0 0-2-2h-1a2 2 0 0 0-2 2v1a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-1"></path><path d="M3 16v-1a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v1a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-1"></path><path d="M12 22v-1a2 2 0 0 0-2-2h-1a2 2 0 0 0-2 2v1a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-1"></path></svg>
+                    <h3 class="text-lg font-bold text-white mb-2">Persistent Daemon</h3>
+                    <p class="text-slate-400 text-sm">A background process handles connections so you never miss a message, even with the UI closed.</p>
+                </div>
+                <!-- Textual UI Card -->
+                <div class="card">
+                    <svg class="icon mb-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                    <h3 class="text-lg font-bold text-white mb-2">Modern TUI</h3>
+                    <p class="text-slate-400 text-sm">A beautiful and responsive terminal UI powered by the modern Textual framework.</p>
+                </div>
+                <!-- Data Control Card -->
+                <div class="card">
+                    <svg class="icon mb-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <h3 class="text-lg font-bold text-white mb-2">Data Control</h3>
+                    <p class="text-slate-400 text-sm">Store all data locally. Securely export your entire account for backup or migration.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 4: How It Works -->
+        <div class="slide bg-slate-950">
+            <h2 class="slide-title">How It Works</h2>
+            <p class="slide-subtitle">A robust, asynchronous Client-Daemon model ensures a responsive UI and persistent connections.</p>
+            
+            <div class="w-full max-w-md bg-slate-900 p-6 rounded-xl shadow-2xl border border-slate-800">
+                <div class="diagram-box text-sky-300">
+                    <h3 class="font-bold">Textual UI (Async)</h3>
+                    <p class="text-sm text-slate-400">(Running in async event loop)</p>
+                </div>
+                
+                <div class="diagram-arrow">
+                    │<br>
+                    ├── Local IPC (asyncio)
+                    <br>│
+                </div>
+                
+                <div class="diagram-box text-green-300">
+                    <h3 class="font-bold">Async Server Daemon (server.py)</h3>
+                    <p class="text-sm text-slate-400">(Persistent Background Process)</p>
+                    <ul class="text-xs text-slate-400/80 mt-2">
+                        <li>Async command handlers</li>
+                        <li>Async event broadcasting</li>
+                    </ul>
+                </div>
+
+                <div class="diagram-arrow">
+                    │<br>
+                    ├── P2P connections
+                    <br>│
+                </div>
+
+                <div class="diagram-box text-indigo-300">
+                    <h3 class="font-bold">Async Network Layer (network.py)</h3>
+                    <ul class="text-xs text-slate-400/80 mt-2">
+                        <li>asyncio P2P connections</li>
+                        <li>Async message handling</li>
+                        <li>Connection health monitoring</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 5: Quick Start -->
+        <div class="slide">
+            <h2 class="slide-title">Get Started in 3 Steps</h2>
+            <div class="flex flex-col md:flex-row gap-6 max-w-5xl w-full">
+                <!-- Step 1 -->
+                <div class="card flex-1">
+                    <div class="flex items-center mb-4">
+                        <span class="text-5xl font-black text-sky-400 mr-4">1</span>
+                        <h3 class="text-2xl font-bold text-white">Create Identity</h3>
+                    </div>
+                    <p class="text-slate-400">Run Jarvis and choose "Create Identity". Pick a username and a strong, memorable master password. Your unique UID will be generated.</p>
+                    <p class="text-rose-400 text-sm mt-2 font-medium">⚠️ Your password CANNOT be recovered. Write it down!</p>
+                </div>
+                <!-- Step 2 -->
+                <div class="card flex-1">
+                    <div class="flex items-center mb-4">
+                        <span class="text-5xl font-black text-sky-400 mr-4">2</span>
+                        <h3 class="text-2xl font-bold text-white">Add Contact</h3>
+                    </div>
+                    <p class="text-slate-400">The easiest way is to ask your contact for their **Link Code** from their Settings screen. Press `Ctrl+C`, paste the code, and you're set.</p>
+                </div>
+                <!-- Step 3 -->
+                <div class="card flex-1 bg-sky-800/30 border border-sky-700">
+                    <div class="flex items-center mb-4">
+                        <span class="text-5xl font-black text-sky-300 mr-4">3</span>
+                        <h3 class="text-2xl font-bold text-sky-100">Verify Contact</h3>
+                    </div>
+                    <p class="text-sky-100/90">**This is the most important step.** Call your contact or meet them in person. Read your **fingerprints** to each other. If they match, click "Mark as Verified".</p>
+                    <p class="text-sky-300 text-sm mt-2 font-medium">This prevents Man-in-the-Middle (MITM) attacks.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="text-center p-10 border-t border-slate-800 text-slate-500">
+            <p>Copyright (c) 2025 orpheus497</p>
+            <p class="text-sm mt-2">Built with Textual, Asyncio, and a passion for privacy.</p>
+        </footer>
+
+    </div>
+</body>
+</html>
+
