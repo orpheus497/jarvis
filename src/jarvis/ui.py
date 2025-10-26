@@ -198,9 +198,11 @@ class LoadIdentityScreen(ModalScreen):
         with Container(id="identity-dialog"):
             yield AnimatedBanner()
             yield Label("Welcome to Jarvis", id="welcome-label")
+            yield Label("Peer-to-Peer Encrypted Messenger", id="dialog-subtitle")
 
             if self.identity_manager.identity_exists():
                 yield Label("Enter your password to load identity:", id="prompt-label")
+                yield Label("Your identity and contacts will be loaded securely.", id="info-label")
                 yield Input(placeholder="Password", password=True, id="password-input")
                 yield Horizontal(
                     Button("Load Identity", variant="primary", id="load-btn"),
@@ -209,10 +211,14 @@ class LoadIdentityScreen(ModalScreen):
                 )
             else:
                 yield Label("Create a new identity:", id="prompt-label")
-                yield Input(placeholder="Username", id="username-input")
-                yield Input(placeholder="Password", password=True, id="password-input")
-                yield Input(placeholder="Listen Port", value=str(self.default_port),
+                yield Label("Your identity will be encrypted with your password.", id="info-label")
+                yield Label("⚠️ Your password cannot be recovered if forgotten!", id="warning-label")
+                yield Input(placeholder="Username (visible to contacts)", id="username-input")
+                yield Input(placeholder="Password (strong password recommended)", password=True, id="password-input")
+                yield Input(placeholder="Listen Port (default: 5000)", value=str(self.default_port),
                            id="port-input")
+                yield Label("The port is used for incoming P2P connections.", id="info-detail-1")
+                yield Label("You may need to configure port forwarding on your router.", id="info-detail-2")
                 yield Horizontal(
                     Button("Create Identity", variant="primary", id="create-btn"),
                     Button("Cancel", variant="default", id="cancel-btn"),
@@ -318,18 +324,21 @@ class AddContactScreen(ModalScreen):
         """Compose the screen layout."""
         with Container(id="add-contact-dialog"):
             yield Label("Add Contact", id="dialog-title")
-            yield Label("Paste Link Code or enter details manually:", id="dialog-subtitle")
+            yield Label("Easiest: Paste a Link Code from the contact", id="dialog-subtitle")
+            yield Label("Get the link code from Settings > Copy Link Code", id="info-detail-1")
             yield Input(placeholder="Link Code (jarvis://...)", id="link-code-input")
             yield Button("Paste from Clipboard", variant="default", id="paste-btn")
-            yield Label("Or enter details manually:", id="manual-label")
-            yield Input(placeholder="Username", id="username-input")
+            yield Label("Or import a Contact Card file (.jcard):", id="manual-label")
+            yield Button("Import Contact Card", variant="default", id="import-card-btn")
+            yield Label("Or enter contact details manually:", id="manual-label")
+            yield Input(placeholder="Username (display name)", id="username-input")
             yield Input(placeholder="UID (32 hex characters)", id="uid-input")
-            yield Input(placeholder="Public Key (base64)", id="pubkey-input")
-            yield Input(placeholder="Host (IP or hostname)", id="host-input")
-            yield Input(placeholder="Port", value="5000", id="port-input")
+            yield Input(placeholder="Public Key (base64 encoded)", id="pubkey-input")
+            yield Input(placeholder="Host (IP address or hostname)", id="host-input")
+            yield Input(placeholder="Port (default: 5000)", value="5000", id="port-input")
+            yield Label("⚠️ Verify the fingerprint with contact after adding!", id="warning-label")
             yield Horizontal(
                 Button("Add Contact", variant="primary", id="add-btn"),
-                Button("Import Contact Card", variant="default", id="import-card-btn"),
                 Button("Cancel", variant="default", id="cancel-btn"),
                 id="button-row"
             )
@@ -1110,9 +1119,11 @@ class JarvisApp(App):
     def compose(self) -> ComposeResult:
         """Compose the main application layout."""
         yield Header()
+        yield AnimatedBanner()
         with Container(id="main-container"):
             with Vertical(id="contacts-panel"):
                 yield Label("Contacts & Groups")
+                yield Label("", id="connection-status")
                 yield ContactList(self.contact_manager)
             with Vertical(id="chat-panel"):
                 yield Label("Select a contact or group to start chatting", id="chat-header")
@@ -1162,11 +1173,48 @@ class JarvisApp(App):
             self.exit()
             return
 
+        self.notify("Network server started successfully", severity="information")
+
+        # Connect to all contacts automatically
+        self.notify("Connecting to contacts...", severity="information")
+        connection_results = self.network_manager.connect_all_contacts()
+        
+        # Report connection status
+        successful = sum(1 for success in connection_results.values() if success)
+        total = len(connection_results)
+        if total > 0:
+            self.notify(f"Connected to {successful}/{total} contacts", severity="information")
+            self._update_connection_status()
+        else:
+            self.notify("No contacts to connect to. Add contacts to start messaging.", severity="information")
+
         # Refresh contact list
         contact_list = self.query_one(ContactList)
         contact_list.refresh_contacts()
 
         self.notify(f"Welcome, {self.identity.username}!", severity="information")
+
+    def _update_connection_status(self) -> None:
+        """Update connection status display."""
+        if not self.network_manager:
+            return
+        
+        try:
+            status_label = self.query_one("#connection-status", Label)
+            total_contacts = len(self.contact_manager.get_all_contacts())
+            connected = sum(1 for c in self.contact_manager.get_all_contacts() 
+                          if self.network_manager.is_connected(c.uid))
+            
+            if total_contacts == 0:
+                status_label.update("Status: No contacts")
+            elif connected == total_contacts:
+                status_label.update(f"[green]● Status: {connected}/{total_contacts} online[/]")
+            elif connected > 0:
+                status_label.update(f"[yellow]● Status: {connected}/{total_contacts} online[/]")
+            else:
+                status_label.update(f"[red]● Status: {connected}/{total_contacts} online[/]")
+        except Exception:
+            pass  # Status label may not be ready yet
 
     def _handle_incoming_message(self, sender_uid: str, content: str,
                                  message_id: str, timestamp: str) -> None:
@@ -1229,38 +1277,45 @@ class JarvisApp(App):
         if contact:
             if state == ConnectionState.AUTHENTICATED:
                 self.contact_manager.mark_online(uid)
+                self.notify(f"Connected to {contact.username}", severity="information")
             else:
                 self.contact_manager.mark_offline(uid)
 
             # Refresh contact list
             contact_list = self.query_one(ContactList)
             contact_list.refresh_contacts()
+            
+            # Update connection status
+            self._update_connection_status()
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle contact selection."""
-        # Get selected contact
-        contacts = self.contact_manager.get_all_contacts()
-        if event.list_view.index < len(contacts):
-            contact = contacts[event.list_view.index]
-            self.current_contact = contact
-            self.current_group = None
+        try:
+            # Get selected contact
+            contacts = self.contact_manager.get_all_contacts()
+            if event.list_view.index < len(contacts):
+                contact = contacts[event.list_view.index]
+                self.current_contact = contact
+                self.current_group = None
 
-            # Load and display conversation
-            messages = self.message_store.get_conversation(contact.uid)
-            chat_view = self.query_one(ChatView)
-            chat_view.display_messages(messages, self.identity.uid, self.contact_manager)
+                # Load and display conversation
+                messages = self.message_store.get_conversation(contact.uid)
+                chat_view = self.query_one(ChatView)
+                chat_view.display_messages(messages, self.identity.uid, self.contact_manager)
 
-            # Update header
-            self.query_one("#chat-header", Label).update(
-                f"Chat with {contact.username}"
-            )
+                # Update header
+                self.query_one("#chat-header", Label).update(
+                    f"Chat with {contact.username}"
+                )
 
-            # Mark as read
-            self.message_store.mark_as_read(contact.uid)
+                # Mark as read
+                self.message_store.mark_as_read(contact.uid)
 
-            # Try to connect if not connected
-            if not self.network_manager.is_connected(contact.uid):
-                self.run_worker(self._connect_to_contact(contact))
+                # Try to connect if not connected
+                if self.network_manager and not self.network_manager.is_connected(contact.uid):
+                    self.run_worker(self._connect_to_contact(contact))
+        except Exception as e:
+            self.notify(f"Error loading contact: {str(e)}", severity="error")
 
     async def _connect_to_contact(self, contact: Contact) -> None:
         """Connect to a contact in the background."""
@@ -1281,65 +1336,75 @@ class JarvisApp(App):
 
     def _send_current_message(self) -> None:
         """Send the current message."""
-        message_input = self.query_one("#message-input", Input)
-        content = message_input.value.strip()
+        try:
+            message_input = self.query_one("#message-input", Input)
+            content = message_input.value.strip()
 
-        if not content:
-            return
+            if not content:
+                return
 
-        if self.current_contact:
-            # Send direct message
-            message_id = crypto.generate_secure_token(16)
-            timestamp = datetime.now().isoformat()
+            if not self.network_manager:
+                self.notify("Network not initialized", severity="error")
+                return
 
-            if self.network_manager.send_message(
-                self.current_contact.uid, content, message_id, timestamp
-            ):
-                # Store message
-                msg = MessageModel(
-                    contact_uid=self.current_contact.uid,
-                    content=content,
-                    sent_by_me=True,
-                    timestamp=timestamp,
-                    message_id=message_id
+            if self.current_contact:
+                # Send direct message
+                message_id = crypto.generate_secure_token(16)
+                timestamp = datetime.now().isoformat()
+
+                if self.network_manager.send_message(
+                    self.current_contact.uid, content, message_id, timestamp
+                ):
+                    # Store message
+                    msg = MessageModel(
+                        contact_uid=self.current_contact.uid,
+                        content=content,
+                        sent_by_me=True,
+                        timestamp=timestamp,
+                        message_id=message_id
+                    )
+                    self.message_store.add_message(msg)
+
+                    # Update UI
+                    chat_view = self.query_one(ChatView)
+                    chat_view.add_message(msg, self.identity.uid, self.contact_manager)
+
+                    message_input.value = ""
+                else:
+                    self.notify("Failed to send message - Not connected", severity="error")
+
+            elif self.current_group:
+                # Send group message
+                message_id = crypto.generate_secure_token(16)
+                timestamp = datetime.now().isoformat()
+
+                sent_count = self.network_manager.send_group_message(
+                    self.current_group.group_id, content, message_id, timestamp
                 )
-                self.message_store.add_message(msg)
+                
+                if sent_count > 0:
+                    # Store message
+                    msg = MessageModel(
+                        contact_uid=self.current_group.group_id,
+                        content=content,
+                        sent_by_me=True,
+                        timestamp=timestamp,
+                        message_id=message_id,
+                        group_id=self.current_group.group_id,
+                        sender_uid=self.identity.uid
+                    )
+                    self.message_store.add_message(msg)
 
-                # Update UI
-                chat_view = self.query_one(ChatView)
-                chat_view.add_message(msg, self.identity.uid, self.contact_manager)
+                    # Update UI
+                    chat_view = self.query_one(ChatView)
+                    chat_view.add_message(msg, self.identity.uid, self.contact_manager)
 
-                message_input.value = ""
-            else:
-                self.notify("Failed to send message", severity="error")
-
-        elif self.current_group:
-            # Send group message
-            message_id = crypto.generate_secure_token(16)
-            timestamp = datetime.now().isoformat()
-
-            if self.network_manager.send_group_message(
-                self.current_group.group_id, content, message_id, timestamp
-            ) > 0:
-                # Store message
-                msg = MessageModel(
-                    contact_uid=self.current_group.group_id,
-                    content=content,
-                    sent_by_me=True,
-                    timestamp=timestamp,
-                    message_id=message_id,
-                    group_id=self.current_group.group_id,
-                    sender_uid=self.identity.uid
-                )
-                self.message_store.add_message(msg)
-
-                # Update UI
-                chat_view = self.query_one(ChatView)
-                chat_view.add_message(msg, self.identity.uid, self.contact_manager)
-
-                message_input.value = ""
-            else:
-                self.notify("Failed to send group message", severity="error")
+                    message_input.value = ""
+                    self.notify(f"Message sent to {sent_count} member(s)", severity="information")
+                else:
+                    self.notify("Failed to send group message - No members online", severity="error")
+        except Exception as e:
+            self.notify(f"Error sending message: {str(e)}", severity="error")
 
     def action_add_contact(self) -> None:
         """Show add contact screen."""
@@ -1393,6 +1458,12 @@ class JarvisApp(App):
             contact_list = self.query_one(ContactList)
             contact_list.refresh_contacts()
             self.notify(f"Added contact: {result.username}", severity="information")
+            
+            # Automatically try to connect to the new contact
+            if self.network_manager:
+                self.notify(f"Attempting to connect to {result.username}...", severity="information")
+                self.run_worker(self._connect_to_contact(result))
+                self._update_connection_status()
 
     def action_create_group(self) -> None:
         """Show create group screen."""

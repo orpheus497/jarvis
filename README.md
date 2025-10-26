@@ -191,18 +191,57 @@ rmdir /s /q "%APPDATA%\Jarvis"
 ### First-Time Setup
 
 1.  Launch Jarvis using the launcher script or `jarvis` command.
-2.  Choose "Create Identity".
-3.  Enter your username and master password.
-4.  Set your listen port (default: 5000).
-5.  **Save your UID** - you'll share this with contacts.
+2.  Read the welcome screen carefully - it contains important information.
+3.  Choose "Create Identity".
+4.  Enter your username (visible to contacts) and a strong master password.
+5.  Set your listen port (default: 5000).
+6.  **Save your UID** - you'll share this with contacts to allow them to add you.
 
-**⚠️ IMPORTANT:** Your master password cannot be recovered. If you forget it, your identity is permanently inaccessible.
+**⚠️ CRITICAL:** Your master password cannot be recovered. If you forget it, your identity is permanently inaccessible. Write it down in a secure location.
+
+**🔑 Understanding Your Listen Port:**
+- This port is used for incoming P2P connections from contacts
+- Must be open in your firewall
+- May require port forwarding on your router for Internet connections
+- Each instance of Jarvis must use a different port on the same machine
+
+### Connecting to Contacts
+
+**How Jarvis Establishes Connections:**
+
+Jarvis automatically connects to all your contacts when you log in. For connections to work:
+
+1. **Both devices must be running Jarvis** and logged in
+2. **Network connectivity** must exist between devices:
+   - Same device (localhost): Both instances can connect via 127.0.0.1
+   - Same LAN: Use local IP addresses (192.168.x.x or 10.x.x.x)
+   - Over Internet: Both need public IPs or port forwarding configured
+3. **Firewalls must allow** the listen port (default: 5000)
+4. **Each contact must have** the other's correct host information
+
+**Connection Status Indicators:**
+- **Green dot (●)**: Contact is online and connected - messages will deliver instantly
+- **Red dot (●)**: Contact is offline or not reachable - messages will queue
+- **Status display**: Shows "X/Y online" where X is connected and Y is total contacts
+
+**Troubleshooting Connection Issues:**
+
+If contacts don't connect:
+1. Verify both devices are running Jarvis and logged in
+2. Check the host field contains the correct IP address or hostname
+3. Verify the port number matches the contact's listen port
+4. Test network connectivity with `ping` or `telnet` to the host:port
+5. Ensure firewalls allow incoming connections on the listen port
+6. For Internet connections, verify port forwarding is configured
+7. Check the connection status display for real-time connection information
 
 ### Adding Contacts
 
-**Method 1: Link Code (fastest)**
+**Method 1: Link Code (fastest and recommended)**
 1.  Press `Ctrl+C` or click "Add Contact".
-2.  Paste a link code (jarvis://...) and press Enter.
+2.  Ask your contact to go to Settings and copy their link code.
+3.  Paste the link code (jarvis://...) and press "Add Contact".
+4.  Jarvis will automatically attempt to connect to the contact.
 
 **Method 2: Contact Card File**
 1.  Press `Ctrl+C` or click "Add Contact".
@@ -215,16 +254,19 @@ rmdir /s /q "%APPDATA%\Jarvis"
     *   **UID:** Contact's unique identifier (32 hex characters)
     *   **Username:** Display name
     *   **Public Key:** Contact's public key (base64)
-    *   **Host:** IP address or hostname
-    *   **Port:** Listen port (default: 5000)
+    *   **Host:** IP address or hostname of contact's device
+    *   **Port:** Contact's listen port (default: 5000)
 3.  **Verify fingerprint** with contact through a trusted channel (phone call, in person, etc.)
 4.  Mark contact as verified after fingerprint confirmation.
 
+**⚠️ Important:** Always verify the fingerprint with your contact through a separate trusted channel to prevent man-in-the-middle attacks.
+
 ### Sharing Your Identity
 
-**Method 1: Link Code**
-*   Go to Settings (`Ctrl+S`) and copy the link code
+**Method 1: Link Code (easiest)**
+*   Go to Settings (`Ctrl+S`) and click "Copy Link Code"
 *   Share via any messaging app or email
+*   Contact can paste this code directly in Jarvis
 
 **Method 2: Contact Card File**
 *   Go to Settings (`Ctrl+S`) and click "Export Contact Card"

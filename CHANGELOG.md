@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Automatic connection to all contacts on login
+  - `connect_all_contacts()` now called automatically after server starts
+  - Connection status notifications show successful/failed connections
+  - Real-time connection status display in main UI
+- Connection status indicator in main UI
+  - Shows "X/Y online" where X is connected contacts and Y is total
+  - Color-coded: green (all connected), yellow (some connected), red (none connected)
+  - Updates automatically when connection states change
+- Animated ASCII banner on main application screen
+  - Matches welcome screen banner for consistency
+  - Cycles through color scheme: white, red, bright_white, dark red, purple, grey
+- Connection notifications
+  - Notifies user when contacts connect/disconnect
+  - Shows connection attempts for new contacts
+  - Reports connection success/failure with counts
+- User guidance throughout application
+  - Welcome screen explains password recovery warning
+  - Welcome screen explains port configuration and requirements
+  - Add Contact screen provides step-by-step instructions
+  - Add Contact screen explains each input field purpose
+  - Connection troubleshooting information in README
+- Error handling for UI operations
+  - Contact selection wrapped in try-except to prevent crashes
+  - Message sending includes network availability checks
+  - Detailed error messages for failed operations
+
+### Changed
+- Network initialization now automatically connects to all contacts
+  - Removed manual connection requirement
+  - Reports connection statistics on startup
+- Connection state changes now update UI status display
+  - Real-time feedback on peer connectivity
+  - Automatic UI refresh on connection events
+- Message sending provides better feedback
+  - Shows reason for failure (not connected, no members online)
+  - Reports number of recipients for group messages
+- Contact addition now triggers automatic connection attempt
+  - New contacts are immediately available for messaging
+  - Connection status updates reflect new contact
+- LoadIdentityScreen provides comprehensive guidance
+  - Password recovery warning prominently displayed
+  - Port configuration explained with examples
+  - Subtitle added for clearer identity
+- AddContactScreen reorganized for clarity
+  - Instructions prioritize easiest methods first
+  - Each method clearly separated with labels
+  - Warnings about fingerprint verification prominent
+
+### Fixed
+- Connections between separate devices now establish automatically
+  - Critical bug: `connect_all_contacts()` was defined but never called
+  - Server would start but never initiate outgoing connections
+  - Contacts on different devices would never detect each other
+  - Now automatically connects on login and when contacts are added
+- UI crashes from unhandled exceptions
+  - Added try-except blocks around contact selection
+  - Added try-except blocks around message sending
+  - Added network availability checks before operations
+- Missing connection status feedback
+  - Users couldn't see which contacts were actually connected
+  - No indication of connection attempts or failures
+  - Status display now shows real-time connection information
+
 ### Security
 - Updated cryptography library from 41.0.7 to 42.0.4
   - Fixes NULL pointer dereference vulnerability (CVE-2024-0727)
