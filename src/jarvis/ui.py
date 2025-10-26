@@ -119,6 +119,64 @@ class LinkCodeGenerator:
             return None
 
 
+class ContactCardManager:
+    """Utility for exporting and importing contact cards as files."""
+
+    @staticmethod
+    def export_contact_card(identity: Identity, host: str, filepath: str) -> bool:
+        """
+        Export own identity to a contact card file (.jcard format) for sharing.
+        Only exports user's own identity - not other contacts.
+        Returns True if successful.
+        """
+        try:
+            public_key_b64 = base64.b64encode(
+                identity.keypair.get_public_key_bytes()
+            ).decode('utf-8')
+
+            card_data = {
+                'version': '1.0',
+                'type': 'jarvis_contact_card',
+                'uid': identity.uid,
+                'username': identity.username,
+                'public_key': public_key_b64,
+                'fingerprint': identity.fingerprint,
+                'host': host,
+                'port': identity.listen_port,
+                'exported_at': datetime.now().isoformat()
+            }
+
+            with open(filepath, 'w') as f:
+                json.dump(card_data, f, indent=2)
+            
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def import_contact_card(filepath: str) -> Optional[Dict]:
+        """
+        Import a contact card from a file.
+        Returns contact data if valid, None otherwise.
+        """
+        try:
+            with open(filepath, 'r') as f:
+                card_data = json.load(f)
+
+            # Validate card format
+            if card_data.get('type') != 'jarvis_contact_card':
+                return None
+
+            # Validate required fields
+            required = ['uid', 'username', 'public_key', 'fingerprint', 'host', 'port']
+            if not all(field in card_data for field in required):
+                return None
+
+            return card_data
+        except Exception:
+            return None
+
+
 class LoadIdentityScreen(ModalScreen):
     """Screen for loading or creating identity."""
 
@@ -262,6 +320,7 @@ class AddContactScreen(ModalScreen):
             yield Label("Add Contact", id="dialog-title")
             yield Label("Paste Link Code or enter details manually:", id="dialog-subtitle")
             yield Input(placeholder="Link Code (jarvis://...)", id="link-code-input")
+            yield Button("Paste from Clipboard", variant="default", id="paste-btn")
             yield Label("Or enter details manually:", id="manual-label")
             yield Input(placeholder="Username", id="username-input")
             yield Input(placeholder="UID (32 hex characters)", id="uid-input")
@@ -270,13 +329,24 @@ class AddContactScreen(ModalScreen):
             yield Input(placeholder="Port", value="5000", id="port-input")
             yield Horizontal(
                 Button("Add Contact", variant="primary", id="add-btn"),
+                Button("Import Contact Card", variant="default", id="import-card-btn"),
                 Button("Cancel", variant="default", id="cancel-btn"),
                 id="button-row"
             )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press."""
-        if event.button.id == "add-btn":
+        if event.button.id == "paste-btn":
+            import pyperclip
+            try:
+                clipboard_text = pyperclip.paste()
+                link_code_input = self.query_one("#link-code-input", Input)
+                link_code_input.value = clipboard_text.strip()
+            except Exception:
+                pass
+        elif event.button.id == "import-card-btn":
+            self.dismiss("import_card")
+        elif event.button.id == "add-btn":
             link_code_input = self.query_one("#link-code-input", Input)
             link_code = link_code_input.value.strip()
 
@@ -445,6 +515,125 @@ class CreateGroupScreen(ModalScreen):
         self.dismiss(None)
 
 
+class LockScreen(ModalScreen):
+    """Lock screen to secure the application."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss_lock", "Cancel"),
+    ]
+
+    def __init__(self, password: str):
+        super().__init__()
+        self.password = password
+        self.attempts = 0
+
+    def compose(self) -> ComposeResult:
+        """Compose the screen layout."""
+        with Container(id="lock-dialog"):
+            yield AnimatedBanner()
+            yield Label("Jarvis is Locked", id="lock-title")
+            yield Label("Enter your password to unlock:", id="lock-prompt")
+            yield Input(placeholder="Password", password=True, id="password-input")
+            yield Horizontal(
+                Button("Unlock", variant="primary", id="unlock-btn"),
+                Button("Cancel", variant="default", id="cancel-btn"),
+                id="button-row"
+            )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        if event.button.id == "unlock-btn":
+            password_input = self.query_one("#password-input", Input)
+            entered_password = password_input.value
+
+            if entered_password == self.password:
+                self.dismiss(True)
+            else:
+                self.attempts += 1
+                password_input.value = ""
+                password_input.placeholder = f"Incorrect password! (Attempt {self.attempts})"
+        elif event.button.id == "cancel-btn":
+            self.dismiss(False)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle Enter key in password input."""
+        if event.input.id == "password-input":
+            entered_password = event.input.value
+
+            if entered_password == self.password:
+                self.dismiss(True)
+            else:
+                self.attempts += 1
+                event.input.value = ""
+                event.input.placeholder = f"Incorrect password! (Attempt {self.attempts})"
+
+    def action_dismiss_lock(self) -> None:
+        """Cancel lock (do not unlock)."""
+        self.dismiss(False)
+
+
+class DeleteAccountScreen(ModalScreen):
+    """Screen for deleting account with confirmation."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, identity: Identity, password: str):
+        super().__init__()
+        self.identity = identity
+        self.stored_password = password
+
+    def compose(self) -> ComposeResult:
+        """Compose the screen layout."""
+        with Container(id="delete-account-dialog"):
+            yield Label("Delete Account", id="dialog-title")
+            yield Label("⚠️  WARNING: This action cannot be undone!", id="warning-label")
+            yield Label("", id="spacer")
+            yield Label("This will permanently delete:", id="info-label")
+            yield Label("  • Your identity and keys", id="info-detail-1")
+            yield Label("  • All contacts", id="info-detail-2")
+            yield Label("  • All messages", id="info-detail-3")
+            yield Label("  • All groups", id="info-detail-4")
+            yield Label("", id="spacer2")
+            yield Label("Enter your password to confirm deletion:", id="confirm-label")
+            yield Input(placeholder="Password", password=True, id="password-input")
+            yield Horizontal(
+                Button("Delete Account", variant="error", id="delete-btn"),
+                Button("Cancel", variant="default", id="cancel-btn"),
+                id="button-row"
+            )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        if event.button.id == "delete-btn":
+            password_input = self.query_one("#password-input", Input)
+            entered_password = password_input.value
+
+            if entered_password == self.stored_password:
+                self.dismiss(True)
+            else:
+                password_input.value = ""
+                password_input.placeholder = "Incorrect password!"
+        elif event.button.id == "cancel-btn":
+            self.dismiss(False)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle Enter key in password input."""
+        if event.input.id == "password-input":
+            entered_password = event.input.value
+
+            if entered_password == self.stored_password:
+                self.dismiss(True)
+            else:
+                event.input.value = ""
+                event.input.placeholder = "Incorrect password!"
+
+    def action_cancel(self) -> None:
+        """Cancel and close."""
+        self.dismiss(False)
+
+
 class SettingsScreen(ModalScreen):
     """Settings screen."""
 
@@ -452,27 +641,51 @@ class SettingsScreen(ModalScreen):
         Binding("escape", "cancel", "Cancel"),
     ]
 
-    def __init__(self, identity: Identity):
+    def __init__(self, identity: Identity, is_parent_session: bool = True):
         super().__init__()
         self.identity = identity
+        self.is_parent_session = is_parent_session
 
     def compose(self) -> ComposeResult:
         """Compose the screen layout."""
         with Container(id="settings-dialog"):
             yield Label("Settings", id="dialog-title")
             yield Label(f"Username: {self.identity.username}", id="username-label")
-            yield Label(f"UID: {self.identity.uid}", id="uid-label")
+            yield Label(f"Session Type: {'Parent' if self.is_parent_session else 'Child'}", 
+                       id="session-type-label")
+            yield Label(f"UID:", id="uid-label")
+            yield Input(value=self.identity.uid, id="uid-display", disabled=True)
+            yield Button("Copy UID", variant="default", id="copy-uid-btn")
             yield Label(f"Fingerprint:", id="fp-label")
-            yield Label(format_fingerprint(self.identity.fingerprint), id="fp-value")
+            yield Input(value=format_fingerprint(self.identity.fingerprint), 
+                       id="fp-display", disabled=True)
+            yield Button("Copy Fingerprint", variant="default", id="copy-fp-btn")
             yield Label(f"Listen Port: {self.identity.listen_port}", id="port-label")
             yield Label("", id="spacer")
             yield Label("Link Code (share this to add you as a contact):", id="link-label")
             yield Input(value="", id="link-code-display", disabled=True)
             yield Horizontal(
                 Button("Copy Link Code", variant="primary", id="copy-btn"),
-                Button("Close", variant="default", id="close-btn"),
-                id="button-row"
+                Button("Export Contact Card", variant="default", id="export-card-btn"),
+                id="button-row-1"
             )
+            
+            if self.is_parent_session:
+                yield Horizontal(
+                    Button("Export Identity", variant="default", id="export-identity-btn"),
+                    Button("Manage Sessions", variant="default", id="manage-sessions-btn"),
+                    id="button-row-2"
+                )
+                yield Horizontal(
+                    Button("Delete Account", variant="error", id="delete-account-btn"),
+                    Button("Close", variant="default", id="close-btn"),
+                    id="button-row-3"
+                )
+            else:
+                yield Horizontal(
+                    Button("Close", variant="default", id="close-btn"),
+                    id="button-row-2"
+                )
 
     def on_mount(self) -> None:
         """Generate link code on mount."""
@@ -482,8 +695,9 @@ class SettingsScreen(ModalScreen):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press."""
+        import pyperclip
+        
         if event.button.id == "copy-btn":
-            import pyperclip
             link_code_input = self.query_one("#link-code-display", Input)
             try:
                 pyperclip.copy(link_code_input.value)
@@ -492,12 +706,220 @@ class SettingsScreen(ModalScreen):
                 )
             except Exception:
                 pass
+        elif event.button.id == "export-card-btn":
+            self.dismiss("export_card")
+        elif event.button.id == "export-identity-btn":
+            self.dismiss("export_identity")
+        elif event.button.id == "manage-sessions-btn":
+            self.dismiss("manage_sessions")
+        elif event.button.id == "copy-uid-btn":
+            try:
+                pyperclip.copy(self.identity.uid)
+                self.query_one("#uid-label").update("UID: (copied!)")
+            except Exception:
+                pass
+        elif event.button.id == "copy-fp-btn":
+            try:
+                pyperclip.copy(self.identity.fingerprint)
+                self.query_one("#fp-label").update("Fingerprint: (copied!)")
+            except Exception:
+                pass
+        elif event.button.id == "delete-account-btn":
+            self.dismiss("delete_account")
         elif event.button.id == "close-btn":
-            self.dismiss()
+            self.dismiss(None)
 
     def action_cancel(self) -> None:
         """Cancel and close."""
-        self.dismiss()
+        self.dismiss(None)
+
+
+class SessionManagementScreen(ModalScreen):
+    """Screen for managing parent and child sessions."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, session_manager, current_session_id: str):
+        super().__init__()
+        self.session_manager = session_manager
+        self.current_session_id = current_session_id
+
+    def compose(self) -> ComposeResult:
+        """Compose the screen layout."""
+        with Container(id="sessions-dialog"):
+            yield Label("Session Management", id="dialog-title")
+            yield Label("Active Sessions:", id="sessions-label")
+            yield ListView(id="sessions-list")
+            yield Horizontal(
+                Button("Disable Session", variant="default", id="disable-btn"),
+                Button("Enable Session", variant="default", id="enable-btn"),
+                Button("Delete Session", variant="error", id="delete-btn"),
+                Button("Close", variant="default", id="close-btn"),
+                id="button-row"
+            )
+
+    def on_mount(self) -> None:
+        """Populate sessions list."""
+        sessions_list = self.query_one("#sessions-list", ListView)
+        child_sessions = self.session_manager.get_child_sessions(self.current_session_id)
+        
+        if not child_sessions:
+            sessions_list.append(ListItem(Label("No child sessions")))
+        else:
+            for session in child_sessions:
+                status = "Enabled" if session.enabled else "Disabled"
+                label_text = f"Session {session.session_id[:8]}... | {session.ip_address} | {status}"
+                sessions_list.append(ListItem(Label(label_text)))
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        sessions_list = self.query_one("#sessions-list", ListView)
+        
+        if event.button.id == "disable-btn":
+            if sessions_list.index is not None and sessions_list.index >= 0:
+                child_sessions = self.session_manager.get_child_sessions(self.current_session_id)
+                if child_sessions and sessions_list.index < len(child_sessions):
+                    session = child_sessions[sessions_list.index]
+                    self.dismiss(("disable", session.session_id))
+        elif event.button.id == "enable-btn":
+            if sessions_list.index is not None and sessions_list.index >= 0:
+                child_sessions = self.session_manager.get_child_sessions(self.current_session_id)
+                if child_sessions and sessions_list.index < len(child_sessions):
+                    session = child_sessions[sessions_list.index]
+                    self.dismiss(("enable", session.session_id))
+        elif event.button.id == "delete-btn":
+            if sessions_list.index is not None and sessions_list.index >= 0:
+                child_sessions = self.session_manager.get_child_sessions(self.current_session_id)
+                if child_sessions and sessions_list.index < len(child_sessions):
+                    session = child_sessions[sessions_list.index]
+                    self.dismiss(("delete", session.session_id))
+        elif event.button.id == "close-btn":
+            self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        """Cancel and close."""
+        self.dismiss(None)
+
+
+class ContactDetailsScreen(ModalScreen):
+    """Screen showing contact details with management options."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, contact: Contact, contact_manager: ContactManager, 
+                 message_store: MessageStore):
+        super().__init__()
+        self.contact = contact
+        self.contact_manager = contact_manager
+        self.message_store = message_store
+
+    def compose(self) -> ComposeResult:
+        """Compose the screen layout."""
+        with Container(id="contact-details-dialog"):
+            yield Label("Contact Details", id="dialog-title")
+            yield Label(f"Username: {self.contact.username}", id="contact-username")
+            yield Label(f"UID:", id="uid-label")
+            yield Input(value=self.contact.uid, id="uid-display", disabled=True)
+            yield Label(f"Fingerprint:", id="fp-label")
+            yield Input(value=format_fingerprint(self.contact.fingerprint), 
+                       id="fp-display", disabled=True)
+            yield Label(f"Host: {self.contact.host}:{self.contact.port}", id="host-label")
+            yield Label(f"Status: {self.contact.status}", id="status-label")
+            yield Label(f"Verified: {'Yes' if self.contact.verified else 'No'}", 
+                       id="verified-label")
+            yield Label("", id="spacer")
+            yield Horizontal(
+                Button("Copy UID", variant="primary", id="copy-uid-btn"),
+                Button("Copy Fingerprint", variant="primary", id="copy-fp-btn"),
+                id="button-row-1"
+            )
+            yield Horizontal(
+                Button("Delete Contact", variant="error", id="delete-contact-btn"),
+                Button("Close", variant="default", id="close-btn"),
+                id="button-row-2"
+            )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        import pyperclip
+        
+        if event.button.id == "copy-uid-btn":
+            try:
+                pyperclip.copy(self.contact.uid)
+                self.query_one("#uid-label").update("UID: (copied!)")
+            except Exception:
+                pass
+        elif event.button.id == "copy-fp-btn":
+            try:
+                pyperclip.copy(self.contact.fingerprint)
+                self.query_one("#fp-label").update("Fingerprint: (copied!)")
+            except Exception:
+                pass
+        elif event.button.id == "delete-contact-btn":
+            self.dismiss("delete")
+        elif event.button.id == "close-btn":
+            self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        """Cancel and close."""
+        self.dismiss(None)
+
+
+class GroupDetailsScreen(ModalScreen):
+    """Screen showing group details with management options."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, group: Group, group_manager: GroupManager, 
+                 message_store: MessageStore):
+        super().__init__()
+        self.group = group
+        self.group_manager = group_manager
+        self.message_store = message_store
+
+    def compose(self) -> ComposeResult:
+        """Compose the screen layout."""
+        with Container(id="group-details-dialog"):
+            yield Label("Group Details", id="dialog-title")
+            yield Label(f"Name: {self.group.name}", id="group-name")
+            yield Label(f"Group ID:", id="gid-label")
+            yield Input(value=self.group.group_id, id="gid-display", disabled=True)
+            yield Label(f"Description: {self.group.description or 'None'}", 
+                       id="desc-label")
+            yield Label(f"Members: {len(self.group.members)}", id="members-label")
+            yield Label(f"Created: {self.group.created_at[:10]}", id="created-label")
+            yield Label("", id="spacer")
+            yield Horizontal(
+                Button("Copy Group ID", variant="primary", id="copy-gid-btn"),
+                Button("Delete Group", variant="error", id="delete-group-btn"),
+                Button("Close", variant="default", id="close-btn"),
+                id="button-row"
+            )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        import pyperclip
+        
+        if event.button.id == "copy-gid-btn":
+            try:
+                pyperclip.copy(self.group.group_id)
+                self.query_one("#gid-label").update("Group ID: (copied!)")
+            except Exception:
+                pass
+        elif event.button.id == "delete-group-btn":
+            self.dismiss("delete")
+        elif event.button.id == "close-btn":
+            self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        """Cancel and close."""
+        self.dismiss(None)
 
 
 class ContactList(ListView):
@@ -589,7 +1011,9 @@ class JarvisApp(App):
         background: #000000;
     }
 
-    #identity-dialog, #add-contact-dialog, #create-group-dialog, #settings-dialog {
+    #identity-dialog, #add-contact-dialog, #create-group-dialog, #settings-dialog, 
+    #lock-dialog, #delete-account-dialog, #contact-details-dialog, #group-details-dialog,
+    #sessions-dialog {
         align: center middle;
         width: 80;
         height: auto;
@@ -598,11 +1022,28 @@ class JarvisApp(App):
         padding: 1 2;
     }
 
-    #welcome-label, #dialog-title {
+    #welcome-label, #dialog-title, #lock-title {
         text-align: center;
         text-style: bold;
         color: #ff4444;
         margin-bottom: 1;
+    }
+    
+    #warning-label {
+        text-align: center;
+        text-style: bold;
+        color: #ff0000;
+        margin-bottom: 1;
+    }
+    
+    #lock-prompt, #confirm-label, #info-label {
+        color: #cccccc;
+        margin-bottom: 1;
+    }
+    
+    #info-detail-1, #info-detail-2, #info-detail-3, #info-detail-4 {
+        color: #888888;
+        margin-left: 2;
     }
 
     #prompt-label, #dialog-subtitle, #manual-label, #members-label, #link-label {
@@ -720,6 +1161,9 @@ class JarvisApp(App):
         Binding("ctrl+c", "add_contact", "Add Contact"),
         Binding("ctrl+g", "create_group", "New Group"),
         Binding("ctrl+s", "settings", "Settings"),
+        Binding("ctrl+l", "lock_app", "Lock"),
+        Binding("ctrl+i", "contact_info", "Contact Info"),
+        Binding("ctrl+d", "delete_current", "Delete"),
         Binding("ctrl+q", "quit", "Quit"),
     ]
 
@@ -737,6 +1181,10 @@ class JarvisApp(App):
         self.message_store = MessageStore(os.path.join(data_dir, 'messages.json'))
         self.group_manager = GroupManager(os.path.join(data_dir, 'groups.json'))
         self.network_manager: Optional[NetworkManager] = None
+        
+        # Import SessionManager
+        from .session import SessionManager
+        self.session_manager = SessionManager(os.path.join(data_dir, 'sessions.json'))
 
         self.current_contact: Optional[Contact] = None
         self.current_group: Optional[Group] = None
@@ -772,6 +1220,9 @@ class JarvisApp(App):
             return
 
         self.identity, self.password = result
+        
+        # Create parent session
+        self.session_manager.create_parent_session(self.identity.uid)
 
         # Initialize network manager
         self.network_manager = NetworkManager(
@@ -979,7 +1430,48 @@ class JarvisApp(App):
     async def _show_add_contact(self) -> None:
         """Worker to show add contact screen."""
         result = await self.push_screen_wait(AddContactScreen(self.contact_manager))
-        if result:
+        
+        if result == "import_card":
+            # Import contact card from file
+            try:
+                cards_dir = os.path.join(self.data_dir, 'contact_cards')
+                os.makedirs(cards_dir, exist_ok=True)
+                
+                # List available .jcard files
+                card_files = [f for f in os.listdir(cards_dir) if f.endswith('.jcard')]
+                
+                if not card_files:
+                    self.notify("No contact card files found in contact_cards directory", severity="warning")
+                    return
+                
+                # For now, import the first card file found
+                # In a full implementation, you'd show a file picker
+                filepath = os.path.join(cards_dir, card_files[0])
+                card_data = ContactCardManager.import_contact_card(filepath)
+                
+                if card_data:
+                    contact = Contact(
+                        uid=card_data['uid'],
+                        username=card_data['username'],
+                        public_key=card_data['public_key'],
+                        host=card_data['host'],
+                        port=card_data['port'],
+                        fingerprint=card_data['fingerprint'],
+                        verified=card_data.get('verified', False)
+                    )
+                    
+                    if self.contact_manager.add_contact(contact):
+                        contact_list = self.query_one(ContactList)
+                        contact_list.refresh_contacts()
+                        self.notify(f"Imported contact: {contact.username}", severity="information")
+                    else:
+                        self.notify("Contact already exists", severity="warning")
+                else:
+                    self.notify("Invalid contact card file", severity="error")
+            except Exception as e:
+                self.notify(f"Error importing contact card: {str(e)}", severity="error")
+        
+        elif result:
             contact_list = self.query_one(ContactList)
             contact_list.refresh_contacts()
             self.notify(f"Added contact: {result.username}", severity="information")
@@ -1004,7 +1496,196 @@ class JarvisApp(App):
 
     async def _show_settings(self) -> None:
         """Worker to show settings screen."""
-        await self.push_screen_wait(SettingsScreen(self.identity))
+        is_parent = self.session_manager.is_parent_session()
+        result = await self.push_screen_wait(SettingsScreen(self.identity, is_parent))
+        
+        if result == "export_card":
+            # Export contact card
+            try:
+                # Use data directory for contact cards
+                cards_dir = os.path.join(self.data_dir, 'contact_cards')
+                os.makedirs(cards_dir, exist_ok=True)
+                
+                filename = f"{self.identity.username}_{self.identity.uid[:8]}.jcard"
+                filepath = os.path.join(cards_dir, filename)
+                
+                if ContactCardManager.export_contact_card(self.identity, "localhost", filepath):
+                    self.notify(f"Contact card exported to: {filepath}", severity="information")
+                else:
+                    self.notify("Failed to export contact card", severity="error")
+            except Exception as e:
+                self.notify(f"Error exporting contact card: {str(e)}", severity="error")
+        
+        elif result == "export_identity":
+            # Export identity for creating child session
+            try:
+                export_dir = os.path.join(self.data_dir, 'identity_exports')
+                os.makedirs(export_dir, exist_ok=True)
+                
+                filename = f"{self.identity.username}_identity_{self.identity.uid[:8]}.jidentity"
+                filepath = os.path.join(export_dir, filename)
+                
+                if self.identity_manager.export_identity(self.password, filepath):
+                    # Create child session record
+                    current_session = self.session_manager.get_current_session()
+                    if current_session:
+                        child_session = self.session_manager.create_child_session(
+                            self.identity.uid,
+                            current_session.session_id
+                        )
+                    self.notify(f"Identity exported to: {filepath}", severity="information")
+                    self.notify("This creates a child session for multi-device login", severity="information")
+                else:
+                    self.notify("Failed to export identity", severity="error")
+            except Exception as e:
+                self.notify(f"Error exporting identity: {str(e)}", severity="error")
+        
+        elif result == "manage_sessions":
+            # Show session management screen
+            current_session = self.session_manager.get_current_session()
+            if current_session:
+                session_result = await self.push_screen_wait(
+                    SessionManagementScreen(self.session_manager, current_session.session_id)
+                )
+                
+                if session_result:
+                    action, session_id = session_result
+                    if action == "disable":
+                        if self.session_manager.disable_session(session_id):
+                            self.notify("Session disabled", severity="information")
+                    elif action == "enable":
+                        if self.session_manager.enable_session(session_id):
+                            self.notify("Session enabled", severity="information")
+                    elif action == "delete":
+                        if self.session_manager.delete_session(session_id):
+                            self.notify("Session deleted", severity="information")
+        
+        elif result == "delete_account":
+            # Only parent sessions can delete account
+            if not is_parent:
+                self.notify("Only parent sessions can delete accounts", severity="warning")
+                return
+            
+            # Show delete account confirmation
+            delete_result = await self.push_screen_wait(
+                DeleteAccountScreen(self.identity, self.password)
+            )
+            
+            if delete_result:
+                # Delete all data
+                self.identity_manager.delete_identity(self.password)
+                self.contact_manager.delete_all_contacts()
+                self.message_store.delete_all_messages()
+                self.group_manager.delete_all_groups()
+                
+                # Disconnect and shutdown
+                if self.network_manager:
+                    self.network_manager.disconnect_all()
+                    self.network_manager.stop_server()
+                
+                self.notify("Account deleted successfully.", severity="warning")
+                self.exit()
+    
+    def action_lock_app(self) -> None:
+        """Lock the application."""
+        self.run_worker(self._lock_app())
+    
+    async def _lock_app(self) -> None:
+        """Worker to lock the application."""
+        result = await self.push_screen_wait(LockScreen(self.password))
+        
+        if result:
+            self.notify("Application unlocked", severity="information")
+        else:
+            # User cancelled - could optionally do something here
+            pass
+    
+    def action_contact_info(self) -> None:
+        """Show info for current contact or group."""
+        self.run_worker(self._show_contact_info())
+    
+    async def _show_contact_info(self) -> None:
+        """Worker to show contact or group info."""
+        if self.current_contact:
+            result = await self.push_screen_wait(
+                ContactDetailsScreen(self.current_contact, self.contact_manager, 
+                                   self.message_store)
+            )
+            
+            if result == "export_card":
+                # Export contact card
+                try:
+                    cards_dir = os.path.join(self.data_dir, 'contact_cards')
+                    os.makedirs(cards_dir, exist_ok=True)
+                    
+                    filename = f"{self.current_contact.username}_{self.current_contact.uid[:8]}.jcard"
+                    filepath = os.path.join(cards_dir, filename)
+                    
+                    if ContactCardManager.export_contact_to_card(self.current_contact, filepath):
+                        self.notify(f"Contact card exported to: {filepath}", severity="information")
+                    else:
+                        self.notify("Failed to export contact card", severity="error")
+                except Exception as e:
+                    self.notify(f"Error exporting contact card: {str(e)}", severity="error")
+            
+            elif result == "delete":
+                # Confirm and delete contact
+                if self.contact_manager.remove_contact(self.current_contact.uid):
+                    # Delete conversation
+                    self.message_store.delete_conversation(self.current_contact.uid)
+                    
+                    # Disconnect if connected
+                    if self.network_manager:
+                        self.network_manager.disconnect_from_peer(self.current_contact.uid)
+                    
+                    # Clear current selection
+                    self.current_contact = None
+                    
+                    # Refresh UI
+                    contact_list = self.query_one(ContactList)
+                    contact_list.refresh_contacts()
+                    
+                    self.query_one("#chat-header", Label).update(
+                        "Select a contact or group to start chatting"
+                    )
+                    chat_view = self.query_one(ChatView)
+                    chat_view.display_messages([], self.identity.uid, self.contact_manager)
+                    
+                    self.notify("Contact deleted successfully", severity="information")
+        
+        elif self.current_group:
+            result = await self.push_screen_wait(
+                GroupDetailsScreen(self.current_group, self.group_manager, 
+                                 self.message_store)
+            )
+            
+            if result == "delete":
+                # Confirm and delete group
+                if self.group_manager.delete_group(self.current_group.group_id):
+                    # Delete conversation
+                    self.message_store.delete_group_conversation(self.current_group.group_id)
+                    
+                    # Clear current selection
+                    self.current_group = None
+                    
+                    # Refresh UI
+                    contact_list = self.query_one(ContactList)
+                    contact_list.refresh_contacts()
+                    
+                    self.query_one("#chat-header", Label).update(
+                        "Select a contact or group to start chatting"
+                    )
+                    chat_view = self.query_one(ChatView)
+                    chat_view.display_messages([], self.identity.uid, self.contact_manager)
+                    
+                    self.notify("Group deleted successfully", severity="information")
+        else:
+            self.notify("No contact or group selected", severity="warning")
+    
+    def action_delete_current(self) -> None:
+        """Delete current contact or group."""
+        # Just call the contact info action which has delete option
+        self.action_contact_info()
 
     def action_quit(self) -> None:
         """Quit the application."""

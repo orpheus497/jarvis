@@ -246,3 +246,17 @@ class MessageStore:
                     continue
                 results.append(msg)
         return results
+    
+    def delete_all_messages(self) -> bool:
+        """
+        Delete all messages and the messages file.
+        Returns True if successful.
+        """
+        self.messages.clear()
+        if os.path.exists(self.messages_file):
+            try:
+                os.remove(self.messages_file)
+                return True
+            except Exception:
+                return False
+        return True

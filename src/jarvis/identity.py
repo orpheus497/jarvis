@@ -150,3 +150,58 @@ class IdentityManager:
         # Save with new password
         self.save_identity(new_password)
         return True
+    
+    def export_identity(self, password: str, export_path: str) -> bool:
+        """
+        Export identity to file for multi-session support.
+        Creates an encrypted identity file that can be used to create a child session.
+        Returns True if successful.
+        """
+        # Verify password first
+        if not self.load_identity(password):
+            return False
+        
+        try:
+            identity_data = self.identity.to_dict()
+            encrypted_data = crypto.encrypt_identity_file(identity_data, password)
+            
+            with open(export_path, 'w') as f:
+                json.dump(encrypted_data, f, indent=2)
+            
+            return True
+        except Exception:
+            return False
+    
+    def import_identity(self, import_path: str, password: str) -> Optional[Identity]:
+        """
+        Import identity from exported file.
+        Returns identity if successful, None otherwise.
+        """
+        try:
+            with open(import_path, 'r') as f:
+                encrypted_data = json.load(f)
+            
+            identity_data = crypto.decrypt_identity_file(encrypted_data, password)
+            identity = Identity.from_dict(identity_data)
+            return identity
+        except Exception:
+            return None
+    
+    def delete_identity(self, password: str) -> bool:
+        """
+        Delete identity file after verifying password.
+        Returns True if successful, False if password is incorrect or file doesn't exist.
+        """
+        # Verify password first
+        if not self.load_identity(password):
+            return False
+        
+        # Delete identity file
+        if os.path.exists(self.identity_file):
+            try:
+                os.remove(self.identity_file)
+                self.identity = None
+                return True
+            except Exception:
+                return False
+        return False

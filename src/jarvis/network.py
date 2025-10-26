@@ -456,7 +456,12 @@ class P2PServer:
 
 
 class NetworkManager:
-    """Manages all P2P connections and group chat routing."""
+    """Manages all P2P connections and group chat routing with automatic reconnection."""
+    
+    # Configuration constants
+    THREAD_JOIN_TIMEOUT = 2.0  # Timeout for thread shutdown
+    RECONNECT_INTERVAL = 60  # Reconnection attempt interval in seconds
+    MANAGER_LOOP_INTERVAL = 10  # Connection manager check interval in seconds
     
     def __init__(self, identity: crypto.IdentityKeyPair, my_uid: str, 
                  my_username: str, listen_port: int, contact_manager):
@@ -477,16 +482,84 @@ class NetworkManager:
         self.on_group_message_callback: Optional[Callable] = None
         self.on_connection_state_callback: Optional[Callable] = None
         
+        # Background connection management
+        self.auto_reconnect_enabled = True
+        self.connection_manager_thread: Optional[threading.Thread] = None
+        self.running = False
+        
         self.lock = threading.Lock()
     
     def start_server(self) -> bool:
-        """Start listening for incoming connections."""
+        """Start listening for incoming connections and background connection manager."""
         self.server.on_connection_callback = self._handle_incoming_connection
-        return self.server.start()
+        success = self.server.start()
+        
+        if success:
+            # Start background connection manager
+            self.running = True
+            self.connection_manager_thread = threading.Thread(
+                target=self._connection_manager_loop, 
+                daemon=True
+            )
+            self.connection_manager_thread.start()
+        
+        return success
     
     def stop_server(self):
-        """Stop listening for connections."""
+        """Stop listening for connections and background threads."""
+        self.running = False
         self.server.stop()
+        
+        if self.connection_manager_thread:
+            self.connection_manager_thread.join(timeout=self.THREAD_JOIN_TIMEOUT)
+    
+    def _connection_manager_loop(self):
+        """
+        Background thread that manages connections.
+        - Monitors connection health
+        - Attempts automatic reconnection to offline contacts
+        - Handles stale connections
+        """
+        last_reconnect_attempt = time.time()
+        
+        while self.running:
+            time.sleep(self.MANAGER_LOOP_INTERVAL)
+            
+            if not self.auto_reconnect_enabled:
+                continue
+            
+            # Check if it's time to attempt reconnections
+            if time.time() - last_reconnect_attempt < self.RECONNECT_INTERVAL:
+                continue
+            
+            last_reconnect_attempt = time.time()
+            
+            # Get all contacts
+            contacts = self.contact_manager.get_all_contacts()
+            
+            for contact in contacts:
+                # Skip if already connected
+                if self.is_connected(contact.uid):
+                    continue
+                
+                # Attempt to connect in background
+                # Silently fail - connection issues are expected and will retry later
+                try:
+                    self.connect_to_peer(contact)
+                except (ConnectionError, socket.timeout, OSError):
+                    pass  # Expected network errors during reconnection attempts
+                except Exception:
+                    pass  # Catch-all for any unexpected errors
+            
+            # Clean up disconnected connections
+            with self.lock:
+                disconnected = [
+                    uid for uid, conn in self.connections.items()
+                    if conn.state == ConnectionState.DISCONNECTED or conn.state == ConnectionState.ERROR
+                ]
+                
+                for uid in disconnected:
+                    del self.connections[uid]
     
     def connect_to_peer(self, contact: Contact) -> bool:
         """Establish connection to a peer."""

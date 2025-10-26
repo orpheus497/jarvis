@@ -68,6 +68,14 @@ Your conversations remain completely under your control.
 *   **Status Indicators:** Real-time online/offline status
 *   **Unread Badges:** Visual indicators for unread messages
 *   **Keyboard Shortcuts:** Efficient keyboard-driven interface
+*   **Lock Feature:** Secure your app with Ctrl+L (keeps connections active)
+
+### Privacy & Data Control
+
+*   **Account Deletion:** Complete account and data deletion with password confirmation
+*   **Data Management:** Delete individual contacts, messages, or groups
+*   **Secure Wipe:** All cryptographic keys and sensitive data removed on deletion
+*   **User Control:** Full control over your data at all times
 
 ---
 
@@ -185,8 +193,18 @@ rmdir /s /q "%APPDATA%\Jarvis"
 
 ### Adding Contacts
 
+**Method 1: Link Code (fastest)**
 1.  Press `Ctrl+C` or click "Add Contact".
-2.  Enter contact information:
+2.  Paste a link code (jarvis://...) and press Enter.
+
+**Method 2: Contact Card File**
+1.  Press `Ctrl+C` or click "Add Contact".
+2.  Click "Import Contact Card" to import a .jcard file.
+3.  Contact card files are stored in the contact_cards directory.
+
+**Method 3: Manual Entry**
+1.  Press `Ctrl+C` or click "Add Contact".
+2.  Enter contact information manually:
     *   **UID:** Contact's unique identifier (32 hex characters)
     *   **Username:** Display name
     *   **Public Key:** Contact's public key (base64)
@@ -197,12 +215,47 @@ rmdir /s /q "%APPDATA%\Jarvis"
 
 ### Sharing Your Identity
 
-Share this information with contacts who want to add you:
+**Method 1: Link Code**
+*   Go to Settings (`Ctrl+S`) and copy the link code
+*   Share via any messaging app or email
 
+**Method 2: Contact Card File**
+*   Go to Settings (`Ctrl+S`) and click "Export Contact Card"
+*   Contact card is saved to contact_cards directory
+*   Share the .jcard file with contacts (via email, USB drive, etc.)
+
+**Method 3: Manual Information**
+Share this information with contacts who want to add you:
 *   **UID:** Your unique identifier (shown in settings)
 *   **Public Key:** Your public key (shown in settings)
 *   **Host:** Your IP address or hostname
 *   **Port:** Your listen port
+
+### Multi-Device Login (Parent-Child Sessions)
+
+**Exporting Identity for Another Device:**
+1.  Go to Settings (`Ctrl+S`) on your parent session
+2.  Click "Export Identity"
+3.  Identity file (.jidentity) is saved to identity_exports directory
+4.  Transfer file to other device securely (USB drive, secure file transfer)
+5.  On other device, import the identity file to create a child session
+
+**Parent Session Features:**
+*   Full account control including deletion
+*   Can manage child sessions via "Manage Sessions" button
+*   View IP addresses of child sessions
+*   Enable/disable child sessions
+*   Delete child sessions remotely
+
+**Child Session Features:**
+*   Full messaging and contact management
+*   Cannot delete account (parent only)
+*   Linked to parent for security monitoring
+
+**Benefits:**
+*   Maintain strong P2P server connections across multiple devices
+*   Always reachable when one device is online
+*   Parent can monitor and control all sessions for security
 
 ### Daily Use
 
@@ -211,6 +264,14 @@ Share this information with contacts who want to add you:
 *   **Status Indicators:** Green dot = online, Red dot = offline
 *   **Unread Messages:** Yellow badge shows unread count
 *   **Settings:** Press `Ctrl+S` to access settings
+*   **Contact Info:** Press `Ctrl+I` to view contact or group details
+*   **Delete Contact/Group:** Press `Ctrl+D` or use `Ctrl+I` then click Delete button
+*   **Copy Data:** All UIDs, fingerprints, and link codes have copy buttons
+*   **Export Contact Card:** From Settings screen (only your own card)
+*   **Export Identity:** From Settings (parent sessions only) for multi-device login
+*   **Manage Sessions:** View and control child sessions (parent sessions only)
+*   **Lock App:** Press `Ctrl+L` to lock the application (keeps connections active)
+*   **Delete Account:** Access via Settings menu - removes all data permanently (parent only)
 *   **Quit:** Press `Ctrl+Q` or `Escape` to exit
 
 ### Keyboard Shortcuts
@@ -218,6 +279,9 @@ Share this information with contacts who want to add you:
 *   `Ctrl+C` - Add Contact
 *   `Ctrl+G` - New Group
 *   `Ctrl+S` - Settings
+*   `Ctrl+I` - Contact/Group Info
+*   `Ctrl+D` - Delete Current Contact/Group
+*   `Ctrl+L` - Lock Application
 *   `Ctrl+Q` - Quit
 *   `Enter` - Send Message
 *   `Escape` - Cancel/Close

@@ -172,3 +172,17 @@ class ContactManager:
         if contact:
             contact.mark_offline()
             self.save_contacts()
+    
+    def delete_all_contacts(self) -> bool:
+        """
+        Delete all contacts and the contacts file.
+        Returns True if successful.
+        """
+        self.contacts.clear()
+        if os.path.exists(self.contacts_file):
+            try:
+                os.remove(self.contacts_file)
+                return True
+            except Exception:
+                return False
+        return True

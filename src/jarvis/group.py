@@ -244,3 +244,17 @@ class GroupManager:
             self.save_groups()
             return True
         return False
+    
+    def delete_all_groups(self) -> bool:
+        """
+        Delete all groups and the groups file.
+        Returns True if successful.
+        """
+        self.groups.clear()
+        if os.path.exists(self.groups_file):
+            try:
+                os.remove(self.groups_file)
+                return True
+            except Exception:
+                return False
+        return True

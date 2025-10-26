@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Account deletion functionality with password confirmation
+  - Delete identity and all cryptographic keys
+  - Delete all contacts
+  - Delete all messages (direct and group)
+  - Delete all groups
+  - Only parent sessions can delete accounts
+- Lock feature (Ctrl+L) to secure the application when stepping away
+  - Keeps network connections active while UI is locked
+  - Password verification required to unlock
+  - Visual lock screen with animated banner
+- Individual contact and group management
+  - ContactDetailsScreen for viewing and managing individual contacts
+  - GroupDetailsScreen for viewing and managing individual groups
+  - Delete individual contacts via Ctrl+I then Delete button or Ctrl+D
+  - Delete individual groups via Ctrl+I then Delete button or Ctrl+D
+  - View contact status, host, port, fingerprint, and verification status
+  - View group members, creation date, and description
+- Parent-child session management system for multi-device login
+  - SessionManager class for tracking and managing active sessions
+  - Parent session can create child sessions via identity export
+  - Parent session can view, enable, disable, and delete child sessions
+  - Child sessions have full functionality except account deletion
+  - Session tracking includes IP address, enabled status, and activity timestamps
+  - SessionManagementScreen UI for viewing and managing child sessions
+- Identity export/import system (.jidentity format)
+  - Export identity from Settings screen (parent sessions only)
+  - Creates encrypted identity file for multi-device login
+  - Import identity on other devices to create child session
+  - Child sessions linked to parent for security monitoring
+- Contact card file sharing system (.jcard format)
+  - ContactCardManager utility class for import/export operations
+  - Export own identity as contact card from Settings screen
+  - Only user's own contact card can be exported (not others' cards)
+  - Import contact cards from Add Contact screen
+  - Contact cards stored in contact_cards directory within data directory
+  - JSON-based .jcard file format with version and type validation
+  - Includes UID, username, public key, fingerprint, host, port
+- Copy functionality throughout the application
+  - Copy UID from Settings screen
+  - Copy fingerprint from Settings screen
+  - Copy link code from Settings screen
+  - Copy contact UID from contact details
+  - Copy contact fingerprint from contact details
+  - Copy group ID from group details
+  - Paste from clipboard button in Add Contact screen
+- Keyboard shortcuts for contact and group management
+  - Ctrl+I to view contact or group details
+  - Ctrl+D to delete current contact or group
+- Complete account and data wipe functionality
+- Delete Account button in Settings screen (parent sessions only)
+- Comprehensive delete account dialog with warnings
+
+### Changed
+- Settings screen displays session type (Parent or Child)
+- Settings screen displays UID and fingerprint in copyable input fields
+- Settings screen includes Copy UID and Copy Fingerprint buttons
+- Settings screen includes Export Contact Card button
+- Settings screen includes Export Identity button (parent sessions only)
+- Settings screen includes Manage Sessions button (parent sessions only)
+- Contact Details screen no longer exports other contacts' cards
+- Add Contact screen includes Import Contact Card button
+- Add Contact screen includes Paste from Clipboard button
+- Keyboard shortcuts with lock feature (Ctrl+L), info (Ctrl+I), and delete (Ctrl+D)
+- Connection stability and background processing
+- Connection management runs in background threads
+- Simultaneous host/client P2P model ensures reliable connectivity
+- Online status detection based on active peer-to-peer connections
+
+### Fixed
+- Group creation UI stability when selecting invitees
+- Worker-related crashes in modal screens
+- Connection state management and automatic reconnection
+
+### Security
+- Lock feature maintains encryption and connection security
+- Account deletion securely removes all sensitive data
+- Password verification required for destructive operations
+- Contact card files stored locally only, never transmitted automatically
+
 ## [1.0.0] - 2025-10-25
 
 ### Added
