@@ -35,6 +35,21 @@ class ConnectionState:
     ERROR = 4
 
 
+class ConnectionStatus:
+    """
+    Connection status indicators for UI display.
+    
+    GREEN: All connections active (server online, all peers connected)
+    AMBER: Partial connections (server online, some peers connected)
+    RED: No connections (server online, no peers connected)
+    GREY: Server offline (cannot send or receive)
+    """
+    GREEN = "green"   # All members online and connected
+    AMBER = "amber"   # Some members online, connection active
+    RED = "red"       # No connections active, but server running
+    GREY = "grey"     # Server offline completely
+
+
 class P2PConnection:
     """Represents a P2P connection with another user."""
     
@@ -618,6 +633,25 @@ class NetworkManager:
                 return True
             return False
     
+    def connect_all_contacts(self) -> Dict[str, bool]:
+        """
+        Establish connections to all contacts on login.
+        
+        Returns dictionary mapping contact UIDs to connection success status.
+        This method is called when user logs in to establish all P2P connections.
+        """
+        results = {}
+        contacts = self.contact_manager.get_all_contacts()
+        
+        for contact in contacts:
+            try:
+                success = self.connect_to_peer(contact)
+                results[contact.uid] = success
+            except Exception:
+                results[contact.uid] = False
+        
+        return results
+    
     def disconnect_from_peer(self, uid: str):
         """Disconnect from a peer."""
         with self.lock:
@@ -678,6 +712,57 @@ class NetworkManager:
         """Get connection state for a peer."""
         connection = self.connections.get(uid)
         return connection.state if connection else ConnectionState.DISCONNECTED
+    
+    def get_connection_status(self, uid: str) -> str:
+        """
+        Get connection status for a single contact.
+        
+        Returns:
+            ConnectionStatus.GREEN: Contact online and connected
+            ConnectionStatus.RED: Contact offline or not connected (but server running)
+            ConnectionStatus.GREY: Our server is offline
+        """
+        if not self.running:
+            return ConnectionStatus.GREY
+        
+        if self.is_connected(uid):
+            return ConnectionStatus.GREEN
+        else:
+            return ConnectionStatus.RED
+    
+    def get_group_connection_status(self, group_id: str) -> str:
+        """
+        Get connection status for a group.
+        
+        Returns:
+            ConnectionStatus.GREEN: All members online and connected
+            ConnectionStatus.AMBER: Some members online, can send/receive
+            ConnectionStatus.RED: No members connected (but server running)
+            ConnectionStatus.GREY: Our server is offline
+        """
+        if not self.running:
+            return ConnectionStatus.GREY
+        
+        if group_id not in self.group_members:
+            return ConnectionStatus.RED
+        
+        members = self.group_members[group_id]
+        if not members:
+            return ConnectionStatus.RED
+        
+        # Exclude ourselves from the count
+        other_members = [uid for uid in members if uid != self.my_uid]
+        if not other_members:
+            return ConnectionStatus.GREEN  # Solo group
+        
+        connected_count = sum(1 for uid in other_members if self.is_connected(uid))
+        
+        if connected_count == len(other_members):
+            return ConnectionStatus.GREEN  # All members connected
+        elif connected_count > 0:
+            return ConnectionStatus.AMBER  # Some members connected
+        else:
+            return ConnectionStatus.RED  # No members connected
     
     def _handle_message(self, sender_uid: str, content: str, message_id: str, timestamp: str):
         """Handle received direct message."""

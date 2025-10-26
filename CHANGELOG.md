@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Connection status indicators with four levels
+  - GREEN: All connections active (all peers online and connected)
+  - AMBER: Partial connections (some peers online, messages can be sent/received)
+  - RED: No active connections (server running but no peers connected)
+  - GREY: Server offline (cannot send or receive messages)
+- Automatic connection establishment on login
+  - Connects to all contacts automatically when user logs in
+  - Establishes group connections for all group members
+  - Maintains parent-child session connections
+- Complete account export functionality
+  - Export entire parent account including identity, contacts, messages, and groups
+  - Only available for parent sessions without child sessions
+  - Encrypted export preserving all account data
+- Connection status tracking for contacts and groups
+  - `get_connection_status()` method for individual contacts
+  - `get_group_connection_status()` method for groups
+  - Real-time status updates based on active connections
+- Automatic connection to all contacts via `connect_all_contacts()` method
 - Account deletion functionality with password confirmation
   - Delete identity and all cryptographic keys
   - Delete all contacts

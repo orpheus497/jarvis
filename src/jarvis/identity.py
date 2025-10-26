@@ -172,6 +172,71 @@ class IdentityManager:
         except Exception:
             return False
     
+    def export_complete_account(self, password: str, export_path: str, 
+                                session_manager, contact_manager, message_store, 
+                                group_manager) -> bool:
+        """
+        Export complete parent account including identity, contacts, messages, and groups.
+        Can only be done if there are no child sessions.
+        
+        Args:
+            password: Account password for verification
+            export_path: Path to save the complete export
+            session_manager: SessionManager instance to check for child sessions
+            contact_manager: ContactManager instance for exporting contacts
+            message_store: MessageStore instance for exporting messages
+            group_manager: GroupManager instance for exporting groups
+            
+        Returns:
+            True if successful, False if password is incorrect or child sessions exist
+        """
+        # Verify password first
+        if not self.load_identity(password):
+            return False
+        
+        # Check if this is a parent session and has no child sessions
+        if session_manager.current_session_id:
+            current_session = session_manager.get_current_session()
+            if not current_session or not current_session.is_parent:
+                return False  # Only parent sessions can export complete account
+            
+            # Check for child sessions
+            child_sessions = session_manager.get_child_sessions(session_manager.current_session_id)
+            if child_sessions:
+                return False  # Cannot export if child sessions exist
+        
+        try:
+            # Collect all account data
+            export_data = {
+                'version': '1.0',
+                'export_type': 'complete_account',
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'identity': self.identity.to_dict(),
+                'contacts': {uid: contact.to_dict() for uid, contact in contact_manager.contacts.items()},
+                'groups': {},
+                'messages': {},
+                'sessions': {sid: session.to_dict() for sid, session in session_manager.sessions.items()}
+            }
+            
+            # Export groups if group_manager has the necessary methods
+            if hasattr(group_manager, 'groups'):
+                export_data['groups'] = {gid: group.to_dict() for gid, group in group_manager.groups.items()}
+            
+            # Export messages if message_store has the necessary methods
+            if hasattr(message_store, 'get_all_messages'):
+                export_data['messages'] = message_store.get_all_messages()
+            
+            # Encrypt the complete export with password
+            encrypted_export = crypto.encrypt_identity_file(export_data, password)
+            
+            # Save to file
+            with open(export_path, 'w') as f:
+                json.dump(encrypted_export, f, indent=2)
+            
+            return True
+        except Exception:
+            return False
+    
     def import_identity(self, import_path: str, password: str) -> Optional[Identity]:
         """
         Import identity from exported file.
