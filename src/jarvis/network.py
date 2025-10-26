@@ -732,6 +732,9 @@ class NetworkManager:
             connection._set_state(ConnectionState.AUTHENTICATED)
 
             # Send handshake response
+            # Note: We send directly via socket instead of using send_queue because:
+            # 1. The send thread hasn't started yet
+            # 2. We need immediate synchronous sending to complete the handshake
             handshake_response = protocol.Protocol.create_handshake_response(
                 self.my_uid,
                 self.my_username,
