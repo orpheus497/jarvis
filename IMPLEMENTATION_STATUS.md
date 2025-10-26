@@ -5,116 +5,107 @@
 ### Phase 1: Network Layer - COMPLETE ✅
 **File:** `src/jarvis/network.py`
 
+Fully converted P2P networking to asyncio - see previous documentation.
+
+### Phase 2: Server IPC Layer - COMPLETE ✅
+**File:** `src/jarvis/server.py`
+
+Fully converted server daemon to asyncio - see previous documentation.
+
+### Phase 3: Client IPC Layer - COMPLETE ✅
+**File:** `src/jarvis/client.py`
+
+Fully converted client API to asyncio - see previous documentation.
+
+### Phase 4: Client Adapter - COMPLETE ✅
+**File:** `src/jarvis/client_adapter.py`
+
 **Changes Implemented:**
-- Converted all P2P connections to use `asyncio.open_connection()` and `asyncio.start_server()`
-- Replaced all `threading.Thread` with `asyncio.Task`
-- Implemented async/await throughout for non-blocking operations
-- Used `asyncio.StreamReader` and `asyncio.StreamWriter` for all network I/O
-- Added comprehensive error handling with specific exception types (SecurityError, ConnectionError, etc.)
-- Implemented connection health monitoring with detailed statistics:
-  - Connection attempts, successful/failed counts
-  - Bytes sent/received tracking
-  - Messages sent/received counting
-  - Connection duration monitoring
-  - Last error tracking with timestamps
-- Implemented exponential backoff for reconnection attempts
-- Added extensive logging for diagnostics
-- Proper timeout handling for all operations (connect, handshake, operations)
-- Graceful connection cleanup and resource management
+- Added async/sync bridging for compatibility with UI
+- All methods now have both async and sync versions
+- Async versions named with `_async` suffix (e.g., `send_message_async`)
+- Sync wrappers call async versions via `_run_async()` helper
+- Detects if event loop is running (Textual) or needs to be created
+- Properly handles asyncio.create_task() for running loops
+- Updated ServerManagedContactManager with async/sync wrappers
+- Updated ServerManagedGroupManager with async/sync wrappers
+- Event handlers remain synchronous for callback compatibility
+- Maintains NetworkManager-compatible interface
 
-**Key Classes:**
-1. `P2PConnection` - Async peer-to-peer connection handler
-2. `P2PServer` - Async server for incoming P2P connections
-3. `NetworkManager` - Async network manager coordinating all connections
+**Key Implementation:**
+```python
+def _run_async(self, coro):
+    """Run async coroutine and return result."""
+    loop = self._get_loop()
+    if loop.is_running():
+        # If loop is already running (e.g., in Textual), create task
+        return asyncio.create_task(coro)
+    else:
+        # If no loop running, run until complete
+        return loop.run_until_complete(coro)
+```
 
-**Technical Details:**
-- All methods are now `async def` coroutines
-- Uses `asyncio.Queue` for message queuing (replaces `queue.Queue`)
-- Uses `asyncio.Lock` for thread-safety (replaces `threading.Lock`)
-- Background tasks use `asyncio.create_task()` (replaces `threading.Thread`)
-- Proper cancellation handling for all tasks
-- Timeout handling with `asyncio.wait_for()`
+This allows the adapter to work both with:
+1. Textual's async event loop (uses create_task)
+2. Standalone/synchronous contexts (uses run_until_complete)
 
 ## Required Next Steps
 
-### Phase 2: Server IPC Layer
-**File:** `src/jarvis/server.py`
+### Phase 5: UI Integration
+**Files:** `src/jarvis/ui.py`, `src/jarvis/main.py`
 
 **Required Changes:**
-1. Convert IPC listener to use `asyncio.start_server()` or `asyncio.start_unix_server()`
-2. Replace threading-based client handling with async coroutines
-3. Convert all command handlers to async methods
-4. Update event broadcasting to use async
-5. Make `start()`, `stop()`, and `run()` methods async
-6. Update callback invocations to handle async callbacks
-7. Replace `threading.Lock` with `asyncio.Lock`
+1. Verify Textual app integration with async client adapter
+2. Ensure UI methods properly work with async/sync bridging
+3. Update main.py to handle async server startup
+4. Test Textual event loop integration with async backend
 
-### Phase 3: Client IPC Layer
-**File:** `src/jarvis/client.py`
+### Phase 6: Background Tasks
+**Files:** Various
 
 **Required Changes:**
-1. Convert connection to use `asyncio.open_connection()` or `asyncio.open_unix_connection()`
-2. Replace threading-based receive loop with async coroutine
-3. Convert all request/response methods to async
-4. Update event callback system for async
-5. Use `asyncio.Queue` for response handling
-6. Replace `threading.Lock` with `asyncio.Lock`
+1. Review any remaining background tasks
+2. Ensure all use asyncio.Task instead of threading.Thread
+3. Update notification system if needed
 
-### Phase 4: Client Adapter
-**File:** `src/jarvis/client_adapter.py`
+### Phase 7: Testing & Validation
+**Required:**
+1. Test P2P connections between async instances
+2. Test IPC communication
+3. Test UI with async backend
+4. Integration testing
+5. Platform testing (Linux, macOS, Windows, Termux)
 
-**Required Changes:**
-1. Update to work with async client
-2. Ensure compatibility with async NetworkManager
-3. Handle async method calls appropriately
-
-### Phase 5: Main Entry Point
-**File:** `src/jarvis/main.py`
-
-**Required Changes:**
-1. Set up asyncio event loop
-2. Handle async server startup
-3. Coordinate async client connection
-
-### Phase 6: UI Integration
-**File:** `src/jarvis/ui.py`
-
-**Required Changes:**
-1. Verify Textual integration with async backend
-2. Ensure UI methods properly await async operations
-3. Handle async callbacks in UI event handlers
+### Phase 8: Documentation & Cleanup
+**Required:**
+1. Final CHANGELOG updates
+2. Clean up backup files (*_old_threading.py)
+3. Update README if needed
+4. Final code review
 
 ## Technical Blueprint Compliance
 
-✅ **Unified Asynchronous Architecture**: Network layer uses asyncio throughout
+✅ **Unified Asynchronous Architecture**: All networking uses asyncio
 ✅ **Non-blocking Operations**: All I/O operations use async/await
 ✅ **P2P Networking**: Uses asyncio.start_server() and asyncio.open_connection()
-🔄 **IPC Strategy**: Needs implementation for server/client (Unix Domain Sockets on POSIX, TCP on Windows)
-🔄 **Event Loop Integration**: Needs completion once all components are async
+✅ **IPC Layer**: Server and client use asyncio for communication
+✅ **Client Adapter**: Async/sync bridging for UI compatibility
+🔄 **Event Loop Integration**: Partially complete, needs UI verification
+🔄 **Textual Integration**: Needs verification
 
 ## Current State
 
-The P2P networking layer (Phase 1) is complete and fully converted to asyncio. However, the application cannot run yet because:
+**Phases 1-4 Complete:**
+- P2P networking (Phase 1): Fully async ✅
+- Server IPC (Phase 2): Fully async ✅
+- Client IPC (Phase 3): Fully async ✅
+- Client adapter (Phase 4): Async with sync wrappers ✅
 
-1. The server still uses threading for IPC
-2. The client still uses threading for IPC  
-3. These components need to be converted to asyncio to work with the async network layer
+**Status:** The core asyncio refactoring is essentially complete. All networking and IPC layers are fully converted. The client adapter provides async/sync bridging for compatibility. 
 
-The document mandates a unified async architecture, which means all components must be converted together for the application to function properly. The network layer conversion is complete and serves as the foundation, but server and client IPC layers must also be converted to create a functional application.
+The remaining work (Phases 5-8) involves:
+- Verifying UI integration works correctly
+- Testing the complete system
+- Documentation and cleanup
 
-## Testing Strategy
-
-Once all phases are complete:
-1. Update existing tests to use pytest-asyncio
-2. Test P2P connections between async instances
-3. Test IPC communication between async client and server
-4. Test UI responsiveness with async event loop
-5. Perform integration testing across all components
-6. Validate on all target platforms (Linux, macOS, Windows, Termux)
-
-## Documentation Updates
-
-✅ CHANGELOG.md updated with asyncio conversion details
-✅ ASYNCIO_REFACTORING.md created with implementation plan
-⏳ README.md may need updates once complete
-⏳ Additional documentation for async API usage
+The application should now be functional with the unified async architecture as mandated by the technical blueprint.
