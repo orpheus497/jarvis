@@ -1094,20 +1094,31 @@ class JarvisApp(App):
         Binding("ctrl+q", "quit", "Quit"),
     ]
 
-    def __init__(self, data_dir: str, default_port: int = 5000, debug: bool = False):
+    def __init__(self, data_dir: str, default_port: int = 5000, ipc_port: int = 5999, debug: bool = False):
         super().__init__()
         self.data_dir = data_dir
         self.default_port = default_port
+        self.ipc_port = ipc_port
 
         self.identity: Optional[Identity] = None
         self.password: Optional[str] = None
 
-        # Initialize managers
+        # Initialize managers  
         self.identity_manager = IdentityManager(os.path.join(data_dir, 'identity.enc'))
-        self.contact_manager = ContactManager(os.path.join(data_dir, 'contacts.json'))
+        
+        # Import client adapter
+        from .client_adapter import ClientAdapter, ServerManagedContactManager, ServerManagedGroupManager
+        from .client import JarvisClient
+        
+        # Initialize client and adapter
+        self.client = JarvisClient(port=ipc_port)
+        self.client_adapter = ClientAdapter(ipc_port)
+        
+        # Use server-managed managers (will be initialized after connection)
+        self.contact_manager = None
+        self.group_manager = None
         self.message_store = MessageStore(os.path.join(data_dir, 'messages.json'))
-        self.group_manager = GroupManager(os.path.join(data_dir, 'groups.json'))
-        self.network_manager: Optional[NetworkManager] = None
+        self.network_manager = None
         
         # Import SessionManager
         from .session import SessionManager
@@ -1139,12 +1150,19 @@ class JarvisApp(App):
 
     async def load_identity_worker(self) -> None:
         """Worker to load or create identity."""
+        # Connect to server first
+        if not self.client_adapter.connect_to_server():
+            self.notify("Failed to connect to server", severity="error")
+            self.exit()
+            return
+        
         # Load or create identity
         result = await self.push_screen_wait(
             LoadIdentityScreen(self.identity_manager, self.data_dir, self.default_port)
         )
 
         if result is None:
+            self.client_adapter.disconnect_from_server()
             self.exit()
             return
 
@@ -1153,40 +1171,33 @@ class JarvisApp(App):
         # Create session
         self.session_manager.create_session(self.identity.uid)
 
-        # Initialize network manager
-        self.network_manager = NetworkManager(
-            self.identity.keypair,
-            self.identity.uid,
-            self.identity.username,
-            self.identity.listen_port,
-            self.contact_manager
-        )
+        # Login to server
+        if not self.client_adapter.login(self.password):
+            self.notify("Failed to login to server", severity="error")
+            self.client_adapter.disconnect_from_server()
+            self.exit()
+            return
+        
+        # Initialize server-managed managers
+        from .client_adapter import ServerManagedContactManager, ServerManagedGroupManager
+        self.contact_manager = ServerManagedContactManager(self.client)
+        self.group_manager = ServerManagedGroupManager(self.client)
+
+        # Use client adapter as network manager (for compatibility)
+        self.network_manager = self.client_adapter
 
         # Set up callbacks
         self.network_manager.on_message_callback = self._handle_incoming_message
         self.network_manager.on_group_message_callback = self._handle_incoming_group_message
         self.network_manager.on_connection_state_callback = self._handle_connection_state_change
 
-        # Start network server
-        if not self.network_manager.start_server():
-            self.notify("Failed to start network server", severity="error")
-            self.exit()
-            return
+        self.notify("Connected to server successfully", severity="information")
 
-        self.notify("Network server started successfully", severity="information")
-
-        # Connect to all contacts automatically
-        self.notify("Connecting to contacts...", severity="information")
-        connection_results = self.network_manager.connect_all_contacts()
+        # Server automatically connects to contacts
+        self.notify("Server connecting to contacts...", severity="information")
         
-        # Report connection status
-        successful = sum(1 for success in connection_results.values() if success)
-        total = len(connection_results)
-        if total > 0:
-            self.notify(f"Connected to {successful}/{total} contacts", severity="information")
-            self._update_connection_status()
-        else:
-            self.notify("No contacts to connect to. Add contacts to start messaging.", severity="information")
+        # Update connection status
+        self._update_connection_status()
 
         # Refresh contact list
         contact_list = self.query_one(ContactList)
@@ -1530,16 +1541,14 @@ class JarvisApp(App):
             )
             
             if delete_result:
-                # Delete all data
-                self.identity_manager.delete_identity(self.password)
-                self.contact_manager.delete_all_contacts()
-                self.message_store.delete_all_messages()
-                self.group_manager.delete_all_groups()
+                # Delete account via server
+                if self.client:
+                    self.client.delete_account(self.password)
                 
-                # Disconnect and shutdown
-                if self.network_manager:
-                    self.network_manager.disconnect_all()
-                    self.network_manager.stop_server()
+                # Disconnect from server
+                if self.client_adapter:
+                    self.client_adapter.logout()
+                    self.client_adapter.disconnect_from_server()
                 
                 self.notify("Account deleted successfully.", severity="warning")
                 self.exit()
@@ -1647,7 +1656,7 @@ class JarvisApp(App):
 
     def action_quit(self) -> None:
         """Quit the application."""
-        if self.network_manager:
-            self.network_manager.disconnect_all()
-            self.network_manager.stop_server()
+        if self.client_adapter:
+            self.client_adapter.logout()
+            self.client_adapter.disconnect_from_server()
         self.exit()

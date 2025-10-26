@@ -1,11 +1,11 @@
 # Jarvis 🛡️
 
-**Version 1.1.0** - _A terminal-based peer-to-peer end-to-end encrypted messenger._
+**Version 1.2.0** - _A terminal-based peer-to-peer end-to-end encrypted messenger._
 
 Created by **orpheus497**.
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Termux-lightgrey)
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
@@ -88,7 +88,7 @@ Your conversations remain completely under your control.
 
 ## Screenshots
 
-*Coming soon - terminal screenshots*
+The application features a terminal-based UI with real-time connection status, message history, and contact management.
 
 ---
 
@@ -327,9 +327,41 @@ You can export your complete account data (identity, contacts, messages, and gro
 
 ## How It Works
 
+### Architecture
+
+Jarvis uses a **client-server architecture** to ensure persistent connections:
+
+**Background Server Process:**
+- Runs continuously in the background (even when UI is closed)
+- Maintains all P2P connections with contacts
+- Handles message encryption, decryption, and routing
+- Manages identity, contacts, groups, and message storage
+- Provides IPC interface for client UI processes
+
+**Foreground Client UI:**
+- Lightweight user interface process
+- Connects to background server via IPC (Inter-Process Communication)
+- Displays messages and connection status in real-time
+- Can be closed and reopened without disconnecting from contacts
+- Multiple UI instances can connect to the same server
+
+**Benefits:**
+- **Persistent Connections:** Your connections stay active even when UI is closed
+- **Reliable Messaging:** Messages are delivered automatically when contacts come online
+- **Multiple Clients:** Run multiple UI windows connecting to the same server
+- **Resource Efficient:** Server process uses minimal resources when idle
+- **Background Operation:** Continue receiving messages with UI closed
+
+When you start Jarvis:
+1. The system checks if a server is already running
+2. If not, it automatically starts a background server process
+3. The UI connects to the server via local IPC (port 5999)
+4. Server authenticates you and maintains P2P connections
+5. You can close the UI, and connections remain active in the background
+
 ### Network Architecture
 
-Jarvis uses direct peer-to-peer TCP connections. When you add a contact, you provide their IP address and port. Jarvis then:
+Jarvis uses direct peer-to-peer TCP connections. When you add a contact, you provide their IP address and port. The background server then performs the following steps:
 
 1.  Establishes a TCP connection to the contact's IP:port
 2.  Exchanges X25519 public keys
@@ -337,7 +369,9 @@ Jarvis uses direct peer-to-peer TCP connections. When you add a contact, you pro
 4.  Derives five independent session keys using HKDF
 5.  Begins encrypted communication
 
-**No servers. No cloud. No third parties.**
+**No cloud servers. No intermediaries. No third parties.**
+
+The background server maintains these P2P connections continuously, ensuring your contacts can reach you at any time without requiring the UI to be open.
 
 ### Encryption Process
 
@@ -488,7 +522,90 @@ For testing or local network use, you can use local IP addresses (192.168.x.x or
 
 ---
 
+## Server Management
+
+### Background Server
+
+Jarvis runs a background server process that maintains P2P connections. The server:
+
+- Starts automatically when you launch the UI
+- Runs independently in the background
+- Persists when UI is closed
+- Manages all network connections
+- Handles message encryption and routing
+- Uses minimal resources when idle
+
+### Server Commands
+
+**Check Server Status:**
+```bash
+# Check if server is running
+pgrep -f jarvis-server  # Linux/macOS
+tasklist /FI "IMAGENAME eq python*" | findstr jarvis  # Windows
+```
+
+**Start Server Manually (Advanced):**
+```bash
+jarvis-server --data-dir ~/.jarvis --ipc-port 5999
+```
+
+**Stop Server:**
+The server stops automatically when:
+- You quit Jarvis UI and no other clients are connected
+- System shuts down
+- Manual termination: `kill <pid>` (Linux/macOS) or `taskkill /PID <pid>` (Windows)
+
+### Multiple UI Windows
+
+You can run multiple UI windows connected to the same server:
+
+```bash
+# Terminal 1
+jarvis
+
+# Terminal 2
+jarvis
+```
+
+Both windows will share the same identity, contacts, and messages. They'll both receive real-time updates when messages arrive.
+
+### Server Data
+
+Server data is stored in:
+- **Linux/macOS:** `~/.jarvis/`
+- **Windows:** `%APPDATA%\Jarvis\`
+- **Termux:** `~/.jarvis/`
+
+Files:
+- `server.pid` - Server process ID (deleted when server stops)
+- `identity.enc` - Encrypted identity file
+- `contacts.json` - Contact list
+- `messages.json` - Message history
+- `groups.json` - Group information
+
+---
+
 ## Troubleshooting
+
+### Server Issues
+
+**Server Won't Start:**
+1. Check if another instance is running: `pgrep -f jarvis-server`
+2. Remove stale PID file: `rm ~/.jarvis/server.pid`
+3. Check port availability: `lsof -i:5999` (Linux/macOS)
+4. Try starting server manually with debug: `jarvis-server --data-dir ~/.jarvis`
+
+**UI Can't Connect to Server:**
+1. Verify server is running
+2. Check firewall allows local connections on port 5999
+3. Try restarting the server
+4. Check data directory permissions
+
+**Messages Not Being Delivered:**
+1. Verify server is connected to contacts (check connection status)
+2. Ensure contacts' servers are also running
+3. Check network connectivity between devices
+4. Verify firewall allows P2P port (default: 5000)
 
 ### Cannot Connect to Contact
 
@@ -549,6 +666,10 @@ jarvis/
 ├── src/jarvis/
 │   ├── __init__.py       # Package metadata
 │   ├── __main__.py       # Entry point
+│   ├── main.py           # Application launcher
+│   ├── server.py         # Background server daemon
+│   ├── client.py         # Client API for IPC
+│   ├── client_adapter.py # Adapter for UI compatibility
 │   ├── crypto.py         # Five-layer encryption
 │   ├── network.py        # P2P networking
 │   ├── protocol.py       # Wire protocol
@@ -556,8 +677,9 @@ jarvis/
 │   ├── message.py        # Message storage
 │   ├── identity.py       # Identity management
 │   ├── group.py          # Group chat
+│   ├── session.py        # Session management
 │   ├── notification.py   # Cross-platform notifications
-│   ├── ui.py             # Textual UI
+│   ├── ui.py             # Textual UI (client)
 │   └── utils.py          # Utility functions
 └── tests/                # Test suite
 ```
@@ -651,18 +773,6 @@ Contributions are welcome! Please:
 MIT License - see `LICENSE` file for details.
 
 Copyright (c) 2025 orpheus497
-
----
-
-## Roadmap
-
-Future considerations (not promises):
-
-- [ ] Voice calling (encrypted audio streams)
-- [ ] File transfers (encrypted P2P file sharing)
-- [ ] Mobile apps (native Android/iOS)
-- [ ] Tor integration (anonymous connections)
-- [ ] Contact discovery (via fingerprint)
 
 ---
 

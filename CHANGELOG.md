@@ -7,15 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2025-10-26
+
 ### Added
-- Automatic connection to all contacts on login
-  - `connect_all_contacts()` now called automatically after server starts
+- Client-server architecture for persistent connections
+  - Background server process maintains P2P connections continuously
+  - Foreground UI acts as client connecting to background server
+  - IPC communication between client and server using JSON-RPC over sockets
+  - Server process runs independently and persists when UI closes
+  - Single server instance per data directory managed via PID file
+  - Automatic server startup when launching UI
+  - Server manages all network connections, identity, contacts, messages, and groups
+- Server daemon module (`jarvis.server`)
+  - Background server process for maintaining P2P connections
+  - IPC interface for client communication (default port: 5999)
+  - Command handling for all operations (messaging, contacts, groups, identity)
+  - Event broadcasting to connected clients for real-time updates
+  - PID file management for single instance enforcement
+  - Signal handlers for graceful shutdown
+  - Unread message tracking and synchronization
+  - Mark messages as read functionality
+  - Unread count queries per contact, group, and total
+- Client API module (`jarvis.client`)
+  - Client interface for communicating with background server
+  - Asynchronous event handling for server broadcasts
+  - Synchronous request-response pattern for commands
+  - Event callback system for real-time notifications
+  - Complete unread message API support
+- Client adapter module (`jarvis.client_adapter`)
+  - Compatibility layer providing NetworkManager-like interface
+  - Server-managed contact and group managers
+  - Minimal changes to UI code required
+- Server entry point (`jarvis-server` command)
+  - Can be run independently for debugging or advanced usage
+  - Supports custom data directory and IPC port configuration
+- Connection status indicators with four levels
+  - GREEN: All connections active (all peers online and connected)
+  - AMBER: Partial connections (some peers online, messages can be sent/received)
+  - RED: No active connections (server running but no peers connected)
+  - GREY: Server offline (cannot send or receive messages)
+- Automatic connection establishment on login
+  - Connects to all contacts automatically when user logs in
+  - Establishes group connections for all group members
   - Connection status notifications show successful/failed connections
   - Real-time connection status display in main UI
 - Connection status indicator in main UI
   - Shows "X/Y online" where X is connected contacts and Y is total
   - Color-coded: green (all connected), yellow (some connected), red (none connected)
   - Updates automatically when connection states change
+- Complete account export functionality
+  - Export entire account including identity, contacts, messages, and groups
+  - Encrypted export preserving all account data
+- Connection status tracking for contacts and groups
+  - `get_connection_status()` method for individual contacts
+  - `get_group_connection_status()` method for groups
+  - Real-time status updates based on active connections
+- Account deletion functionality with password confirmation
+  - Delete identity and all cryptographic keys
+  - Delete all contacts
+  - Delete all messages (direct and group)
+  - Delete all groups
+- Lock feature (Ctrl+L) to secure the application when stepping away
+  - Keeps network connections active while UI is locked
+  - Password verification required to unlock
+  - Visual lock screen with animated banner
+- Individual contact and group management
+  - ContactDetailsScreen for viewing and managing individual contacts
+  - GroupDetailsScreen for viewing and managing individual groups
+  - Delete individual contacts via Ctrl+I then Delete button or Ctrl+D
+  - Delete individual groups via Ctrl+I then Delete button or Ctrl+D
+  - View contact status, host, port, fingerprint, and verification status
+  - View group members, creation date, and description
+- Contact card file sharing system (.jcard format)
+  - ContactCardManager utility class for import/export operations
+  - Export own identity as contact card from Settings screen
+  - Only user's own contact card can be exported (not others' cards)
+  - Import contact cards from Add Contact screen
+  - Contact cards stored in contact_cards directory within data directory
+  - JSON-based .jcard file format with version and type validation
+  - Includes UID, username, public key, fingerprint, host, port
+- Copy functionality throughout the application
+  - Copy UID from Settings screen
+  - Copy fingerprint from Settings screen
+  - Copy link code from Settings screen
+  - Copy contact UID from contact details
+  - Copy contact fingerprint from contact details
+  - Copy group ID from group details
 - Animated ASCII banner on main application screen
   - Matches welcome screen banner for consistency
   - Cycles through color scheme: white, red, bright_white, dark red, purple, grey
@@ -33,8 +110,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Contact selection wrapped in try-except to prevent crashes
   - Message sending includes network availability checks
   - Detailed error messages for failed operations
+- Keyboard shortcuts for contact and group management
+  - Ctrl+I to view contact or group details
+  - Ctrl+D to delete current contact or group
 
 ### Changed
+- Application architecture refactored to client-server model
+  - Server process handles all P2P networking in background
+  - UI process acts as lightweight client
+  - Connections persist even when UI is closed
+  - Multiple UI instances can connect to same server
+- Main entry point starts server automatically if not running
+  - Checks for existing server via PID file
+  - Launches detached server process in background
+  - UI connects to server via IPC
 - Network initialization now automatically connects to all contacts
   - Removed manual connection requirement
   - Reports connection statistics on startup
@@ -55,8 +144,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Instructions prioritize easiest methods first
   - Each method clearly separated with labels
   - Warnings about fingerprint verification prominent
+- Connection stability and background processing
+- Connection management runs in background threads
+- Simultaneous host/client P2P model ensures reliable connectivity
+- Online status detection based on active peer-to-peer connections
+- Settings screen displays UID and fingerprint in copyable input fields
+- Settings screen includes Copy UID and Copy Fingerprint buttons
+- Settings screen includes Export Contact Card button
+- Settings screen includes Export Account button for complete backup
+- Contact Details screen no longer exports other contacts' cards
+- Add Contact screen includes Import Contact Card button
+- Add Contact screen includes Paste from Clipboard button
+- Keyboard shortcuts include lock feature (Ctrl+L), info (Ctrl+I), and delete (Ctrl+D)
 
 ### Fixed
+- Connections now persist across UI restarts
+  - Background server maintains connections continuously
+  - UI can be closed and reopened without disconnecting from contacts
+  - Server handles reconnection logic automatically
 - Connections between separate devices now establish automatically
   - Critical bug: `connect_all_contacts()` was defined but never called
   - Server would start but never initiate outgoing connections
@@ -70,12 +175,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Users couldn't see which contacts were actually connected
   - No indication of connection attempts or failures
   - Status display now shows real-time connection information
+- Group creation UI stability when selecting invitees
+- Worker-related crashes in modal screens
+- Connection state management and automatic reconnection
+- P2P connection establishment between separate machine instances
+  - Fixed client-side handshake flow to properly wait for HANDSHAKE_RESPONSE
+  - Fixed server-side to receive and process client's HANDSHAKE message before sending response
+  - Fixed connection state initialization for incoming connections
+  - Ensured receive/send threads start only after connection is fully authenticated
+  - Added proper socket timeout handling for persistent connections
+  - Improved synchronization between connection endpoints
 
 ### Security
 - Updated cryptography library from 41.0.7 to 42.0.4
   - Fixes NULL pointer dereference vulnerability (CVE-2024-0727)
   - Fixes Bleichenbacher timing oracle attack vulnerability (CVE-2023-50782)
   - All known vulnerabilities in dependencies resolved
+- Server process runs with appropriate isolation
+  - IPC communication restricted to localhost
+  - PID file prevents multiple server instances
+  - Server validates all client commands
+- Lock feature maintains encryption and connection security
+- Account deletion securely removes all sensitive data
+- Password verification required for destructive operations
+- Contact card files stored locally only, never transmitted automatically
 
 ### Removed
 - Multi-device login system (parent-child sessions)
@@ -86,15 +209,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Simplified SessionManager to handle single session type
   - Simplified Identity export to complete account backup only
 
-### Changed
-- Settings screen simplified to remove session type display
-- Export functionality changed to "Export Account" for complete account backup
-- SessionManager API simplified (removed parent-child methods)
-- IdentityManager export methods simplified
-- Account deletion no longer restricted to parent sessions
-- Minimum required cryptography version now 42.0.4
-
-## [1.1.0] - 2025-10-26
+## [1.0.0] - 2025-10-25
 
 ### Added
 - Connection status indicators with four levels
