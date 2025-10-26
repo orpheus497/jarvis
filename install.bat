@@ -5,7 +5,7 @@ REM
 REM Created by orpheus497
 
 echo ======================================
-echo   Jarvis v1.0.0 Local Setup Script
+echo   Jarvis v1.1.0 Local Setup Script
 echo ======================================
 echo.
 echo Peer-to-Peer Encrypted Messenger

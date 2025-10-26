@@ -21,7 +21,7 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='jarvis-messenger',
-    version='1.0.0',
+    version='1.1.0',
     author='orpheus497',
     description='A terminal-based peer-to-peer end-to-end encrypted messenger with multi-layer encryption and group chat',
     long_description=long_description,

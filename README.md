@@ -1,11 +1,11 @@
 # Jarvis 🛡️
 
-**Version 1.0.0** - _A terminal-based peer-to-peer end-to-end encrypted messenger._
+**Version 1.1.0** - _A terminal-based peer-to-peer end-to-end encrypted messenger._
 
 Created by **orpheus497**.
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Termux-lightgrey)
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
@@ -57,6 +57,12 @@ Your conversations remain completely under your control.
 *   **Cross-Platform:** Works on Linux, Windows, macOS, and Termux (Android)
 *   **Background Operation:** Runs in background with system notifications
 *   **Automatic Reconnection:** Handles network interruptions gracefully
+*   **Automatic Connection:** Connects to all contacts, groups, and sessions automatically on login
+*   **Connection Status Indicators:** Four-level status system for real-time visibility
+    *   **Green:** All connections active (all peers online and connected)
+    *   **Amber:** Partial connections (some peers online, messages can be sent/received)
+    *   **Red:** No active connections (server running but no peers connected)
+    *   **Grey:** Server offline (cannot send or receive messages)
 *   **Message History:** Encrypted local storage of conversation history
 
 ### Interface
@@ -73,6 +79,7 @@ Your conversations remain completely under your control.
 ### Privacy & Data Control
 
 *   **Account Deletion:** Complete account and data deletion with password confirmation
+*   **Account Export:** Export complete parent account including identity, contacts, messages, and groups (parent sessions only, when no child sessions exist)
 *   **Data Management:** Delete individual contacts, messages, or groups
 *   **Secure Wipe:** All cryptographic keys and sensitive data removed on deletion
 *   **User Control:** Full control over your data at all times
