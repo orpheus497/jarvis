@@ -119,6 +119,90 @@ class LinkCodeGenerator:
             return None
 
 
+class ContactCardManager:
+    """Utility for exporting and importing contact cards as files."""
+
+    @staticmethod
+    def export_contact_card(identity: Identity, host: str, filepath: str) -> bool:
+        """
+        Export identity to a contact card file (.jcard format).
+        Returns True if successful.
+        """
+        try:
+            public_key_b64 = base64.b64encode(
+                identity.keypair.get_public_key_bytes()
+            ).decode('utf-8')
+
+            card_data = {
+                'version': '1.0',
+                'type': 'jarvis_contact_card',
+                'uid': identity.uid,
+                'username': identity.username,
+                'public_key': public_key_b64,
+                'fingerprint': identity.fingerprint,
+                'host': host,
+                'port': identity.listen_port,
+                'exported_at': datetime.now().isoformat()
+            }
+
+            with open(filepath, 'w') as f:
+                json.dump(card_data, f, indent=2)
+            
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def import_contact_card(filepath: str) -> Optional[Dict]:
+        """
+        Import a contact card from a file.
+        Returns contact data if valid, None otherwise.
+        """
+        try:
+            with open(filepath, 'r') as f:
+                card_data = json.load(f)
+
+            # Validate card format
+            if card_data.get('type') != 'jarvis_contact_card':
+                return None
+
+            # Validate required fields
+            required = ['uid', 'username', 'public_key', 'fingerprint', 'host', 'port']
+            if not all(field in card_data for field in required):
+                return None
+
+            return card_data
+        except Exception:
+            return None
+
+    @staticmethod
+    def export_contact_to_card(contact: Contact, filepath: str) -> bool:
+        """
+        Export a contact to a contact card file.
+        Returns True if successful.
+        """
+        try:
+            card_data = {
+                'version': '1.0',
+                'type': 'jarvis_contact_card',
+                'uid': contact.uid,
+                'username': contact.username,
+                'public_key': contact.public_key,
+                'fingerprint': contact.fingerprint,
+                'host': contact.host,
+                'port': contact.port,
+                'verified': contact.verified,
+                'exported_at': datetime.now().isoformat()
+            }
+
+            with open(filepath, 'w') as f:
+                json.dump(card_data, f, indent=2)
+            
+            return True
+        except Exception:
+            return False
+
+
 class LoadIdentityScreen(ModalScreen):
     """Screen for loading or creating identity."""
 
@@ -271,6 +355,7 @@ class AddContactScreen(ModalScreen):
             yield Input(placeholder="Port", value="5000", id="port-input")
             yield Horizontal(
                 Button("Add Contact", variant="primary", id="add-btn"),
+                Button("Import Contact Card", variant="default", id="import-card-btn"),
                 Button("Cancel", variant="default", id="cancel-btn"),
                 id="button-row"
             )
@@ -285,6 +370,8 @@ class AddContactScreen(ModalScreen):
                 link_code_input.value = clipboard_text.strip()
             except Exception:
                 pass
+        elif event.button.id == "import-card-btn":
+            self.dismiss("import_card")
         elif event.button.id == "add-btn":
             link_code_input = self.query_one("#link-code-input", Input)
             link_code = link_code_input.value.strip()
@@ -602,9 +689,13 @@ class SettingsScreen(ModalScreen):
             yield Input(value="", id="link-code-display", disabled=True)
             yield Horizontal(
                 Button("Copy Link Code", variant="primary", id="copy-btn"),
+                Button("Export Contact Card", variant="default", id="export-card-btn"),
+                id="button-row-1"
+            )
+            yield Horizontal(
                 Button("Delete Account", variant="error", id="delete-account-btn"),
                 Button("Close", variant="default", id="close-btn"),
-                id="button-row"
+                id="button-row-2"
             )
 
     def on_mount(self) -> None:
@@ -626,6 +717,8 @@ class SettingsScreen(ModalScreen):
                 )
             except Exception:
                 pass
+        elif event.button.id == "export-card-btn":
+            self.dismiss("export_card")
         elif event.button.id == "copy-uid-btn":
             try:
                 pyperclip.copy(self.identity.uid)
@@ -680,9 +773,13 @@ class ContactDetailsScreen(ModalScreen):
             yield Horizontal(
                 Button("Copy UID", variant="primary", id="copy-uid-btn"),
                 Button("Copy Fingerprint", variant="primary", id="copy-fp-btn"),
+                id="button-row-1"
+            )
+            yield Horizontal(
+                Button("Export Contact Card", variant="default", id="export-card-btn"),
                 Button("Delete Contact", variant="error", id="delete-contact-btn"),
                 Button("Close", variant="default", id="close-btn"),
-                id="button-row"
+                id="button-row-2"
             )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -701,6 +798,8 @@ class ContactDetailsScreen(ModalScreen):
                 self.query_one("#fp-label").update("Fingerprint: (copied!)")
             except Exception:
                 pass
+        elif event.button.id == "export-card-btn":
+            self.dismiss("export_card")
         elif event.button.id == "delete-contact-btn":
             self.dismiss("delete")
         elif event.button.id == "close-btn":
@@ -1264,7 +1363,48 @@ class JarvisApp(App):
     async def _show_add_contact(self) -> None:
         """Worker to show add contact screen."""
         result = await self.push_screen_wait(AddContactScreen(self.contact_manager))
-        if result:
+        
+        if result == "import_card":
+            # Import contact card from file
+            try:
+                cards_dir = os.path.join(self.data_dir, 'contact_cards')
+                os.makedirs(cards_dir, exist_ok=True)
+                
+                # List available .jcard files
+                card_files = [f for f in os.listdir(cards_dir) if f.endswith('.jcard')]
+                
+                if not card_files:
+                    self.notify("No contact card files found in contact_cards directory", severity="warning")
+                    return
+                
+                # For now, import the first card file found
+                # In a full implementation, you'd show a file picker
+                filepath = os.path.join(cards_dir, card_files[0])
+                card_data = ContactCardManager.import_contact_card(filepath)
+                
+                if card_data:
+                    contact = Contact(
+                        uid=card_data['uid'],
+                        username=card_data['username'],
+                        public_key=card_data['public_key'],
+                        host=card_data['host'],
+                        port=card_data['port'],
+                        fingerprint=card_data['fingerprint'],
+                        verified=card_data.get('verified', False)
+                    )
+                    
+                    if self.contact_manager.add_contact(contact):
+                        contact_list = self.query_one(ContactList)
+                        contact_list.refresh_contacts()
+                        self.notify(f"Imported contact: {contact.username}", severity="information")
+                    else:
+                        self.notify("Contact already exists", severity="warning")
+                else:
+                    self.notify("Invalid contact card file", severity="error")
+            except Exception as e:
+                self.notify(f"Error importing contact card: {str(e)}", severity="error")
+        
+        elif result:
             contact_list = self.query_one(ContactList)
             contact_list.refresh_contacts()
             self.notify(f"Added contact: {result.username}", severity="information")
@@ -1291,7 +1431,24 @@ class JarvisApp(App):
         """Worker to show settings screen."""
         result = await self.push_screen_wait(SettingsScreen(self.identity))
         
-        if result == "delete_account":
+        if result == "export_card":
+            # Export contact card
+            try:
+                # Use data directory for contact cards
+                cards_dir = os.path.join(self.data_dir, 'contact_cards')
+                os.makedirs(cards_dir, exist_ok=True)
+                
+                filename = f"{self.identity.username}_{self.identity.uid[:8]}.jcard"
+                filepath = os.path.join(cards_dir, filename)
+                
+                if ContactCardManager.export_contact_card(self.identity, "localhost", filepath):
+                    self.notify(f"Contact card exported to: {filepath}", severity="information")
+                else:
+                    self.notify("Failed to export contact card", severity="error")
+            except Exception as e:
+                self.notify(f"Error exporting contact card: {str(e)}", severity="error")
+        
+        elif result == "delete_account":
             # Show delete account confirmation
             delete_result = await self.push_screen_wait(
                 DeleteAccountScreen(self.identity, self.password)
@@ -1338,7 +1495,23 @@ class JarvisApp(App):
                                    self.message_store)
             )
             
-            if result == "delete":
+            if result == "export_card":
+                # Export contact card
+                try:
+                    cards_dir = os.path.join(self.data_dir, 'contact_cards')
+                    os.makedirs(cards_dir, exist_ok=True)
+                    
+                    filename = f"{self.current_contact.username}_{self.current_contact.uid[:8]}.jcard"
+                    filepath = os.path.join(cards_dir, filename)
+                    
+                    if ContactCardManager.export_contact_to_card(self.current_contact, filepath):
+                        self.notify(f"Contact card exported to: {filepath}", severity="information")
+                    else:
+                        self.notify("Failed to export contact card", severity="error")
+                except Exception as e:
+                    self.notify(f"Error exporting contact card: {str(e)}", severity="error")
+            
+            elif result == "delete":
                 # Confirm and delete contact
                 if self.contact_manager.remove_contact(self.current_contact.uid):
                     # Delete conversation

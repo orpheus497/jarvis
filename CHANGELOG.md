@@ -24,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Delete individual groups via Ctrl+I then Delete button or Ctrl+D
   - View contact status, host, port, fingerprint, and verification status
   - View group members, creation date, and description
+- Contact card file sharing system (.jcard format)
+  - ContactCardManager utility class for import/export operations
+  - Export own identity as contact card from Settings screen
+  - Export contact details as contact card from Contact Details screen
+  - Import contact cards from Add Contact screen
+  - Contact cards stored in contact_cards directory within data directory
+  - JSON-based .jcard file format with version and type validation
+  - Includes UID, username, public key, fingerprint, host, port, and verification status
 - Copy functionality throughout the application
   - Copy UID from Settings screen
   - Copy fingerprint from Settings screen
@@ -42,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Settings screen displays UID and fingerprint in copyable input fields
 - Settings screen includes Copy UID and Copy Fingerprint buttons
+- Settings screen includes Export Contact Card button
+- Contact Details screen includes Export Contact Card button
+- Add Contact screen includes Import Contact Card button
 - Add Contact screen includes Paste from Clipboard button
 - Keyboard shortcuts with lock feature (Ctrl+L), info (Ctrl+I), and delete (Ctrl+D)
 - Connection stability and background processing
@@ -58,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lock feature maintains encryption and connection security
 - Account deletion securely removes all sensitive data
 - Password verification required for destructive operations
+- Contact card files stored locally only, never transmitted automatically
 
 ## [1.0.0] - 2025-10-25
 

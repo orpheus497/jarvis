@@ -193,8 +193,18 @@ rmdir /s /q "%APPDATA%\Jarvis"
 
 ### Adding Contacts
 
+**Method 1: Link Code (fastest)**
 1.  Press `Ctrl+C` or click "Add Contact".
-2.  Enter contact information:
+2.  Paste a link code (jarvis://...) and press Enter.
+
+**Method 2: Contact Card File**
+1.  Press `Ctrl+C` or click "Add Contact".
+2.  Click "Import Contact Card" to import a .jcard file.
+3.  Contact card files are stored in the contact_cards directory.
+
+**Method 3: Manual Entry**
+1.  Press `Ctrl+C` or click "Add Contact".
+2.  Enter contact information manually:
     *   **UID:** Contact's unique identifier (32 hex characters)
     *   **Username:** Display name
     *   **Public Key:** Contact's public key (base64)
@@ -205,8 +215,17 @@ rmdir /s /q "%APPDATA%\Jarvis"
 
 ### Sharing Your Identity
 
-Share this information with contacts who want to add you:
+**Method 1: Link Code**
+*   Go to Settings (`Ctrl+S`) and copy the link code
+*   Share via any messaging app or email
 
+**Method 2: Contact Card File**
+*   Go to Settings (`Ctrl+S`) and click "Export Contact Card"
+*   Contact card is saved to contact_cards directory
+*   Share the .jcard file with contacts (via email, USB drive, etc.)
+
+**Method 3: Manual Information**
+Share this information with contacts who want to add you:
 *   **UID:** Your unique identifier (shown in settings)
 *   **Public Key:** Your public key (shown in settings)
 *   **Host:** Your IP address or hostname
@@ -222,6 +241,7 @@ Share this information with contacts who want to add you:
 *   **Contact Info:** Press `Ctrl+I` to view contact or group details
 *   **Delete Contact/Group:** Press `Ctrl+D` or use `Ctrl+I` then click Delete button
 *   **Copy Data:** All UIDs, fingerprints, and link codes have copy buttons
+*   **Export Contact Card:** From Settings or Contact Details screens
 *   **Lock App:** Press `Ctrl+L` to lock the application (keeps connections active)
 *   **Delete Account:** Access via Settings menu - removes all data permanently
 *   **Quit:** Press `Ctrl+Q` or `Escape` to exit
