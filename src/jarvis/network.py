@@ -1,22 +1,20 @@
 """
-Jarvis - Peer-to-peer networking layer with group chat support.
+Jarvis - Asynchronous peer-to-peer networking layer with group chat support.
 
 Created by orpheus497
 
 This module implements:
-- Direct P2P TCP connections
+- Direct P2P TCP connections using asyncio
 - Multi-layer encrypted data transmission
 - Group chat message routing
 - Automatic reconnection handling
 - Connection pooling and management
-- NAT traversal support (UPnP/NAT-PMP)
+- Unified asynchronous architecture
 """
 
-import socket
-import threading
-import time
-import queue
+import asyncio
 import struct
+import logging
 from typing import Optional, Callable, Dict, Tuple, List, Set
 from datetime import datetime, timezone
 
@@ -24,6 +22,15 @@ from . import crypto
 from . import protocol
 from .contact import Contact
 from .protocol import MessageType, Protocol
+
+# Configure logging for connection diagnostics
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+
+class SecurityError(Exception):
+    """Raised when a security violation is detected."""
+    pass
 
 
 class ConnectionState:
@@ -51,7 +58,14 @@ class ConnectionStatus:
 
 
 class P2PConnection:
-    """Represents a P2P connection with another user."""
+    """Represents an asynchronous P2P connection with another user."""
+    
+    # Connection timeouts and retry configuration
+    CONNECT_TIMEOUT = 10  # Seconds to wait for initial connection
+    HANDSHAKE_TIMEOUT = 15  # Seconds to wait for handshake completion
+    OPERATION_TIMEOUT = 60  # Seconds for read operations during normal operation
+    PING_INTERVAL = 30  # Seconds between keepalive pings
+    PONG_TIMEOUT = 90  # Seconds before considering connection dead
     
     def __init__(self, contact: Contact, identity: crypto.IdentityKeyPair, 
                  my_uid: str, my_username: str):
@@ -61,25 +75,33 @@ class P2PConnection:
         self.my_username = my_username
         
         self.session_keys: Optional[Tuple[bytes, bytes, bytes, bytes, bytes]] = None
-        self.socket: Optional[socket.socket] = None
+        self.reader: Optional[asyncio.StreamReader] = None
+        self.writer: Optional[asyncio.StreamWriter] = None
         self.state = ConnectionState.DISCONNECTED
         
-        self.receive_thread: Optional[threading.Thread] = None
-        self.send_queue = queue.Queue()
-        self.send_thread: Optional[threading.Thread] = None
+        self.receive_task: Optional[asyncio.Task] = None
+        self.send_queue = asyncio.Queue()
+        self.send_task: Optional[asyncio.Task] = None
+        self.keepalive_task: Optional[asyncio.Task] = None
         
         self.buffer = b''
-        self.last_ping = time.time()
-        self.last_pong = time.time()
+        self.last_ping = asyncio.get_event_loop().time()
+        self.last_pong = asyncio.get_event_loop().time()
+        
+        # Connection statistics for diagnostics
+        self.connection_attempts = 0
+        self.last_error = None
+        self.bytes_sent = 0
+        self.bytes_received = 0
         
         # Callbacks
         self.on_message_callback: Optional[Callable] = None
         self.on_group_message_callback: Optional[Callable] = None
         self.on_state_change_callback: Optional[Callable] = None
         
-        self.lock = threading.Lock()
+        self._lock = asyncio.Lock()
     
-    def connect(self) -> bool:
+    async def connect(self) -> bool:
         """
         Establish connection to peer.
         
@@ -90,39 +112,73 @@ class P2PConnection:
         4. Derive session keys
         5. Send handshake
         6. Receive handshake response
-        7. Start send/receive threads
+        7. Start send/receive tasks
+        
+        Returns:
+            True if connection successful, False otherwise
         """
         try:
+            self.connection_attempts += 1
             self._set_state(ConnectionState.CONNECTING)
+            logger.info(f"Attempting connection to {self.contact.username} ({self.contact.host}:{self.contact.port}) - Attempt #{self.connection_attempts}")
             
-            # Create and connect socket
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.settimeout(10)
-            self.socket.connect((self.contact.host, self.contact.port))
+            # Create connection with timeout
+            try:
+                self.reader, self.writer = await asyncio.wait_for(
+                    asyncio.open_connection(self.contact.host, self.contact.port),
+                    timeout=self.CONNECT_TIMEOUT
+                )
+                logger.debug(f"TCP connection established to {self.contact.username}")
+            except asyncio.TimeoutError:
+                logger.warning(f"Connection timeout to {self.contact.username} after {self.CONNECT_TIMEOUT}s")
+                raise ConnectionError("Connection timeout")
+            except OSError as e:
+                logger.warning(f"Connection failed to {self.contact.username}: {e}")
+                raise
             
             # Send our public key
             our_public_key = self.identity.get_public_key_bytes()
-            self.socket.sendall(struct.pack('!I', len(our_public_key)))
-            self.socket.sendall(our_public_key)
+            self.writer.write(struct.pack('!I', len(our_public_key)))
+            self.writer.write(our_public_key)
+            await self.writer.drain()
+            logger.debug(f"Sent public key to {self.contact.username}")
             
-            # Receive peer's public key
-            key_len = struct.unpack('!I', self._recv_exact(4))[0]
-            if key_len != 32:
-                raise Exception(f"Invalid public key length: {key_len}")
-            
-            peer_public_key_bytes = self._recv_exact(key_len)
-            peer_public_key = crypto.IdentityKeyPair.from_public_bytes(peer_public_key_bytes)
+            # Receive peer's public key with timeout
+            try:
+                key_len_data = await asyncio.wait_for(
+                    self.reader.readexactly(4),
+                    timeout=self.HANDSHAKE_TIMEOUT
+                )
+                key_len = struct.unpack('!I', key_len_data)[0]
+                if key_len != 32:
+                    logger.error(f"Invalid public key length from {self.contact.username}: {key_len}")
+                    raise ValueError(f"Invalid public key length: {key_len}")
+                
+                peer_public_key_bytes = await asyncio.wait_for(
+                    self.reader.readexactly(key_len),
+                    timeout=self.HANDSHAKE_TIMEOUT
+                )
+                peer_public_key = crypto.IdentityKeyPair.from_public_bytes(peer_public_key_bytes)
+                logger.debug(f"Received public key from {self.contact.username}")
+            except asyncio.TimeoutError:
+                logger.error(f"Handshake timeout with {self.contact.username}")
+                raise ConnectionError("Handshake timeout")
             
             # Verify fingerprint
             received_fingerprint = crypto.generate_fingerprint(peer_public_key_bytes)
             if received_fingerprint != self.contact.fingerprint:
-                raise Exception("Fingerprint mismatch - possible MITM attack!")
+                logger.error(f"Fingerprint mismatch for {self.contact.username}! Possible MITM attack!")
+                logger.error(f"Expected: {self.contact.fingerprint}")
+                logger.error(f"Received: {received_fingerprint}")
+                raise SecurityError("Fingerprint mismatch - possible MITM attack!")
+            logger.debug(f"Fingerprint verified for {self.contact.username}")
             
             # Derive session keys using X25519 key exchange
             self.session_keys = crypto.perform_key_exchange(
                 self.identity.private_key,
                 peer_public_key
             )
+            logger.debug(f"Session keys derived for {self.contact.username}")
             
             self._set_state(ConnectionState.CONNECTED)
             
@@ -132,58 +188,80 @@ class P2PConnection:
                 self.my_username,
                 crypto.generate_fingerprint(self.identity.get_public_key_bytes())
             )
-            self.socket.sendall(handshake)
+            self.writer.write(handshake)
+            await self.writer.drain()
+            logger.debug(f"Sent handshake to {self.contact.username}")
             
             # Wait for handshake response
-            header_data = self._recv_exact(Protocol.HEADER_SIZE)
-            version, msg_type_int, payload_length = struct.unpack('!BHI', header_data)
-            
-            # Receive the full payload
-            payload_data = self._recv_exact(payload_length)
-            full_message = header_data + payload_data
+            try:
+                header_data = await asyncio.wait_for(
+                    self.reader.readexactly(Protocol.HEADER_SIZE),
+                    timeout=self.HANDSHAKE_TIMEOUT
+                )
+                version, msg_type_int, payload_length = struct.unpack('!BHI', header_data)
+                
+                # Receive the full payload
+                payload_data = await asyncio.wait_for(
+                    self.reader.readexactly(payload_length),
+                    timeout=self.HANDSHAKE_TIMEOUT
+                )
+                full_message = header_data + payload_data
+            except asyncio.TimeoutError:
+                logger.error(f"Timeout waiting for handshake response from {self.contact.username}")
+                raise ConnectionError("Handshake response timeout")
             
             # Unpack and verify handshake response
             msg_type, response_payload, _ = Protocol.unpack_message(full_message)
             if msg_type != MessageType.HANDSHAKE_RESPONSE:
-                raise Exception(f"Expected HANDSHAKE_RESPONSE, got {msg_type}")
+                logger.error(f"Expected HANDSHAKE_RESPONSE from {self.contact.username}, got {msg_type}")
+                raise ValueError(f"Expected HANDSHAKE_RESPONSE, got {msg_type}")
             
             if not response_payload.get('accepted', False):
-                raise Exception("Handshake rejected by peer")
+                logger.warning(f"Handshake rejected by {self.contact.username}")
+                raise ConnectionRefusedError("Handshake rejected by peer")
+            
+            logger.debug(f"Handshake accepted by {self.contact.username}")
             
             # Mark as authenticated
             self._set_state(ConnectionState.AUTHENTICATED)
             
-            # Set socket timeout for long-running connection
-            self.socket.settimeout(1.0)
+            # Start tasks
+            self.receive_task = asyncio.create_task(self._receive_loop())
+            self.send_task = asyncio.create_task(self._send_loop())
+            self.keepalive_task = asyncio.create_task(self._keepalive_loop())
             
-            # Start threads
-            self.receive_thread = threading.Thread(target=self._receive_loop, daemon=True)
-            self.receive_thread.start()
-            
-            self.send_thread = threading.Thread(target=self._send_loop, daemon=True)
-            self.send_thread.start()
-            
-            # Start keepalive thread
-            keepalive_thread = threading.Thread(target=self._keepalive_loop, daemon=True)
-            keepalive_thread.start()
-            
+            logger.info(f"Successfully connected to {self.contact.username}")
+            self.last_error = None
             return True
             
-        except Exception as e:
+        except asyncio.TimeoutError as e:
+            self.last_error = f"Timeout: {e}"
+            logger.warning(f"Connection to {self.contact.username} timed out: {e}")
             self._set_state(ConnectionState.ERROR)
-            self.disconnect()
+            await self.disconnect()
+            return False
+        except OSError as e:
+            self.last_error = f"OS error: {e}"
+            logger.warning(f"OS error connecting to {self.contact.username}: {e}")
+            self._set_state(ConnectionState.ERROR)
+            await self.disconnect()
+            return False
+        except Exception as e:
+            self.last_error = f"Error: {e}"
+            logger.error(f"Unexpected error connecting to {self.contact.username}: {e}", exc_info=True)
+            self._set_state(ConnectionState.ERROR)
+            await self.disconnect()
             return False
     
-    def send_message(self, plaintext: str, message_id: str, timestamp: str) -> bool:
+    async def send_message(self, plaintext: str, message_id: str, timestamp: str) -> bool:
         """
         Send encrypted message to peer.
         
-        Message flow:
-        1. Encrypt plaintext with five-layer encryption
-        2. Create protocol message
-        3. Add to send queue
+        Returns:
+            True if message queued successfully, False otherwise
         """
         if self.state != ConnectionState.AUTHENTICATED or not self.session_keys:
+            logger.warning(f"Cannot send message to {self.contact.username}: Not authenticated (state={self.state})")
             return False
         
         try:
@@ -194,15 +272,22 @@ class P2PConnection:
             message = Protocol.create_text_message(message_id, plaintext, timestamp, encrypted)
             
             # Add to send queue
-            self.send_queue.put(message)
+            await self.send_queue.put(message)
+            logger.debug(f"Message queued for {self.contact.username} (ID: {message_id})")
             return True
+            
+        except crypto.CryptoError as e:
+            logger.error(f"Encryption failed for message to {self.contact.username}: {e}")
+            return False
         except Exception as e:
+            logger.error(f"Failed to queue message to {self.contact.username}: {e}", exc_info=True)
             return False
     
-    def send_group_message(self, group_id: str, message_id: str, 
-                          plaintext: str, timestamp: str) -> bool:
+    async def send_group_message(self, group_id: str, message_id: str, 
+                                  plaintext: str, timestamp: str) -> bool:
         """Send encrypted group message to peer."""
         if self.state != ConnectionState.AUTHENTICATED or not self.session_keys:
+            logger.warning(f"Cannot send group message to {self.contact.username}: Not authenticated (state={self.state})")
             return False
         
         try:
@@ -213,85 +298,129 @@ class P2PConnection:
                 plaintext, timestamp, encrypted
             )
             
-            self.send_queue.put(message)
+            await self.send_queue.put(message)
+            logger.debug(f"Group message queued for {self.contact.username} (Group: {group_id[:8]}, ID: {message_id})")
             return True
+            
+        except crypto.CryptoError as e:
+            logger.error(f"Encryption failed for group message to {self.contact.username}: {e}")
+            return False
         except Exception as e:
+            logger.error(f"Failed to queue group message to {self.contact.username}: {e}", exc_info=True)
             return False
     
-    def _receive_loop(self):
-        """Background thread for receiving messages."""
-        self.socket.settimeout(1.0)
+    async def _receive_loop(self):
+        """Background task for receiving messages."""
+        logger.debug(f"Receive loop started for {self.contact.username}")
         
-        while self.state in (ConnectionState.CONNECTED, ConnectionState.AUTHENTICATED):
-            try:
-                # Receive data
-                data = self.socket.recv(4096)
-                if not data:
-                    break
-                
-                self.buffer += data
-                
-                # Process all complete messages in buffer
-                while len(self.buffer) >= Protocol.HEADER_SIZE:
-                    result = Protocol.unpack_message(self.buffer)
-                    if not result:
+        try:
+            while self.state in (ConnectionState.CONNECTED, ConnectionState.AUTHENTICATED):
+                try:
+                    # Receive data with timeout
+                    data = await asyncio.wait_for(
+                        self.reader.read(4096),
+                        timeout=self.OPERATION_TIMEOUT
+                    )
+                    
+                    if not data:
+                        logger.warning(f"Connection closed by {self.contact.username}")
                         break
                     
-                    msg_type, payload, consumed = result
-                    self.buffer = self.buffer[consumed:]
+                    self.bytes_received += len(data)
+                    self.buffer += data
                     
-                    # Handle message
-                    self._handle_message(msg_type, payload)
-                    
-            except socket.timeout:
-                continue
-            except Exception as e:
-                break
-        
-        self.disconnect()
-    
-    def _send_loop(self):
-        """Background thread for sending messages."""
-        while self.state in (ConnectionState.CONNECTED, ConnectionState.AUTHENTICATED):
-            try:
-                # Get message from queue with timeout
-                message = self.send_queue.get(timeout=1.0)
+                    # Process all complete messages in buffer
+                    while len(self.buffer) >= Protocol.HEADER_SIZE:
+                        result = Protocol.unpack_message(self.buffer)
+                        if not result:
+                            break
+                        
+                        msg_type, payload, consumed = result
+                        self.buffer = self.buffer[consumed:]
+                        
+                        # Handle message
+                        try:
+                            await self._handle_message(msg_type, payload)
+                        except Exception as e:
+                            logger.error(f"Error handling message from {self.contact.username}: {e}", exc_info=True)
                 
-                # Send message
-                self.socket.sendall(message)
-                
-            except queue.Empty:
-                continue
-            except Exception as e:
-                break
-    
-    def _keepalive_loop(self):
-        """Background thread for keepalive pings."""
-        while self.state in (ConnectionState.CONNECTED, ConnectionState.AUTHENTICATED):
-            time.sleep(30)  # Send ping every 30 seconds
-            
-            if self.state != ConnectionState.AUTHENTICATED:
-                continue
-            
-            # Send ping
-            try:
-                ping = Protocol.create_ping()
-                self.send_queue.put(ping)
-                self.last_ping = time.time()
-                
-                # Check if we've received a pong recently
-                if time.time() - self.last_pong > 90:  # No pong in 90 seconds
-                    self.disconnect()
+                except asyncio.TimeoutError:
+                    # Timeout is normal, just continue
+                    continue
+                except asyncio.CancelledError:
+                    logger.debug(f"Receive loop cancelled for {self.contact.username}")
                     break
-            except:
-                break
+                except Exception as e:
+                    logger.error(f"Unexpected error in receive loop for {self.contact.username}: {e}", exc_info=True)
+                    break
+        finally:
+            logger.debug(f"Receive loop ended for {self.contact.username}")
+            await self.disconnect()
     
-    def _handle_message(self, msg_type: MessageType, payload: Dict):
+    async def _send_loop(self):
+        """Background task for sending messages."""
+        logger.debug(f"Send loop started for {self.contact.username}")
+        
+        try:
+            while self.state in (ConnectionState.CONNECTED, ConnectionState.AUTHENTICATED):
+                try:
+                    # Get message from queue with timeout
+                    message = await asyncio.wait_for(
+                        self.send_queue.get(),
+                        timeout=1.0
+                    )
+                    
+                    # Send message
+                    self.writer.write(message)
+                    await self.writer.drain()
+                    self.bytes_sent += len(message)
+                    
+                except asyncio.TimeoutError:
+                    continue
+                except asyncio.CancelledError:
+                    logger.debug(f"Send loop cancelled for {self.contact.username}")
+                    break
+                except Exception as e:
+                    logger.error(f"Error in send loop for {self.contact.username}: {e}", exc_info=True)
+                    break
+        finally:
+            logger.debug(f"Send loop ended for {self.contact.username}")
+    
+    async def _keepalive_loop(self):
+        """Background task for keepalive pings."""
+        logger.debug(f"Keepalive loop started for {self.contact.username}")
+        
+        try:
+            while self.state in (ConnectionState.CONNECTED, ConnectionState.AUTHENTICATED):
+                await asyncio.sleep(self.PING_INTERVAL)
+                
+                if self.state != ConnectionState.AUTHENTICATED:
+                    continue
+                
+                # Send ping
+                try:
+                    ping = Protocol.create_ping()
+                    await self.send_queue.put(ping)
+                    self.last_ping = asyncio.get_event_loop().time()
+                    
+                    # Check if we've received a pong recently
+                    if asyncio.get_event_loop().time() - self.last_pong > self.PONG_TIMEOUT:
+                        logger.warning(f"No pong from {self.contact.username} in {self.PONG_TIMEOUT}s")
+                        await self.disconnect()
+                        break
+                except Exception as e:
+                    logger.error(f"Error in keepalive for {self.contact.username}: {e}")
+                    break
+        except asyncio.CancelledError:
+            logger.debug(f"Keepalive loop cancelled for {self.contact.username}")
+        finally:
+            logger.debug(f"Keepalive loop ended for {self.contact.username}")
+    
+    async def _handle_message(self, msg_type: MessageType, payload: Dict):
         """Handle received message based on type."""
         
         if msg_type == MessageType.HANDSHAKE_RESPONSE:
-            # Handshake response is now handled during connection establishment
-            # This should not occur in normal operation after connection is established
+            # Handshake response is handled during connection establishment
             pass
         
         elif msg_type == MessageType.TEXT_MESSAGE:
@@ -301,14 +430,23 @@ class P2PConnection:
                     encrypted_data = payload.get('encrypted', {})
                     plaintext = crypto.decrypt_message_five_layer(encrypted_data, self.session_keys)
                     
-                    self.on_message_callback(
-                        self.contact.uid,
-                        plaintext,
-                        payload.get('message_id'),
-                        payload.get('timestamp')
-                    )
-                except crypto.CryptoError:
-                    pass
+                    # Call callback (may be sync or async)
+                    if asyncio.iscoroutinefunction(self.on_message_callback):
+                        await self.on_message_callback(
+                            self.contact.uid,
+                            plaintext,
+                            payload.get('message_id'),
+                            payload.get('timestamp')
+                        )
+                    else:
+                        self.on_message_callback(
+                            self.contact.uid,
+                            plaintext,
+                            payload.get('message_id'),
+                            payload.get('timestamp')
+                        )
+                except crypto.CryptoError as e:
+                    logger.error(f"Decryption failed for message from {self.contact.username}: {e}")
         
         elif msg_type == MessageType.GROUP_MESSAGE:
             # Decrypt and deliver group message
@@ -317,66 +455,82 @@ class P2PConnection:
                     encrypted_data = payload.get('encrypted', {})
                     plaintext = crypto.decrypt_message_five_layer(encrypted_data, self.session_keys)
                     
-                    self.on_group_message_callback(
-                        payload.get('group_id'),
-                        payload.get('sender_uid'),
-                        plaintext,
-                        payload.get('message_id'),
-                        payload.get('timestamp')
-                    )
-                except crypto.CryptoError:
-                    pass
+                    # Call callback (may be sync or async)
+                    if asyncio.iscoroutinefunction(self.on_group_message_callback):
+                        await self.on_group_message_callback(
+                            payload.get('group_id'),
+                            payload.get('sender_uid'),
+                            plaintext,
+                            payload.get('message_id'),
+                            payload.get('timestamp')
+                        )
+                    else:
+                        self.on_group_message_callback(
+                            payload.get('group_id'),
+                            payload.get('sender_uid'),
+                            plaintext,
+                            payload.get('message_id'),
+                            payload.get('timestamp')
+                        )
+                except crypto.CryptoError as e:
+                    logger.error(f"Decryption failed for group message from {self.contact.username}: {e}")
         
         elif msg_type == MessageType.PING:
             # Respond to ping with pong
             pong = Protocol.create_pong()
-            self.send_queue.put(pong)
+            await self.send_queue.put(pong)
         
         elif msg_type == MessageType.PONG:
             # Update last pong time
-            self.last_pong = time.time()
+            self.last_pong = asyncio.get_event_loop().time()
         
         elif msg_type == MessageType.DISCONNECT:
             # Peer initiated disconnect
-            self.disconnect()
+            await self.disconnect()
     
-    def disconnect(self):
+    async def disconnect(self):
         """Close connection and cleanup."""
-        with self.lock:
+        async with self._lock:
             if self.state == ConnectionState.DISCONNECTED:
                 return
             
+            logger.info(f"Disconnecting from {self.contact.username}")
             self._set_state(ConnectionState.DISCONNECTED)
             
-            if self.socket:
-                try:
-                    self.socket.close()
-                except:
-                    pass
-                self.socket = None
+            # Cancel tasks
+            if self.receive_task and not self.receive_task.done():
+                self.receive_task.cancel()
+            if self.send_task and not self.send_task.done():
+                self.send_task.cancel()
+            if self.keepalive_task and not self.keepalive_task.done():
+                self.keepalive_task.cancel()
             
+            # Close writer
+            if self.writer:
+                try:
+                    self.writer.close()
+                    await self.writer.wait_closed()
+                except Exception as e:
+                    logger.debug(f"Error closing writer for {self.contact.username}: {e}")
+                self.writer = None
+            
+            self.reader = None
             self.session_keys = None
             self.buffer = b''
-    
-    def _recv_exact(self, n: int) -> bytes:
-        """Receive exactly n bytes from socket."""
-        data = b''
-        while len(data) < n:
-            packet = self.socket.recv(n - len(data))
-            if not packet:
-                raise Exception("Connection closed")
-            data += packet
-        return data
     
     def _set_state(self, state: ConnectionState):
         """Update connection state and notify callback."""
         self.state = state
         if self.on_state_change_callback:
-            self.on_state_change_callback(self.contact.uid, state)
+            # Call callback (may be sync or async)
+            if asyncio.iscoroutinefunction(self.on_state_change_callback):
+                asyncio.create_task(self.on_state_change_callback(self.contact.uid, state))
+            else:
+                self.on_state_change_callback(self.contact.uid, state)
 
 
 class P2PServer:
-    """Listens for incoming P2P connections."""
+    """Listens for incoming P2P connections using asyncio."""
     
     def __init__(self, port: int, identity: crypto.IdentityKeyPair, 
                  my_uid: str, my_username: str):
@@ -385,76 +539,54 @@ class P2PServer:
         self.my_uid = my_uid
         self.my_username = my_username
         
-        self.server_socket: Optional[socket.socket] = None
+        self.server: Optional[asyncio.Server] = None
         self.running = False
-        self.server_thread: Optional[threading.Thread] = None
         
         # Callbacks
         self.on_connection_callback: Optional[Callable] = None
     
-    def start(self) -> bool:
+    async def start(self) -> bool:
         """Start listening for connections."""
         try:
-            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.server_socket.bind(('0.0.0.0', self.port))
-            self.server_socket.listen(10)
+            self.server = await asyncio.start_server(
+                self._handle_client,
+                '0.0.0.0',
+                self.port
+            )
             self.running = True
-            
-            self.server_thread = threading.Thread(target=self._accept_loop, daemon=True)
-            self.server_thread.start()
-            
+            logger.info(f"P2P server listening on port {self.port}")
             return True
         except Exception as e:
+            logger.error(f"Failed to start P2P server on port {self.port}: {e}")
             return False
     
-    def stop(self):
+    async def stop(self):
         """Stop listening for connections."""
         self.running = False
-        if self.server_socket:
-            try:
-                self.server_socket.close()
-            except:
-                pass
-            self.server_socket = None
+        if self.server:
+            self.server.close()
+            await self.server.wait_closed()
+            logger.info("P2P server stopped")
     
-    def _accept_loop(self):
-        """Accept incoming connections."""
-        self.server_socket.settimeout(1.0)
-        
-        while self.running:
-            try:
-                client_socket, address = self.server_socket.accept()
-                
-                # Handle client in separate thread
-                threading.Thread(
-                    target=self._handle_client,
-                    args=(client_socket, address),
-                    daemon=True
-                ).start()
-                
-            except socket.timeout:
-                continue
-            except Exception as e:
-                if self.running:
-                    time.sleep(0.1)
-    
-    def _handle_client(self, client_socket: socket.socket, address: Tuple[str, int]):
+    async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """Handle incoming client connection."""
+        address = writer.get_extra_info('peername')
+        logger.debug(f"Incoming connection from {address}")
+        
         try:
-            client_socket.settimeout(10)
-            
             # Receive peer's public key
-            key_len = struct.unpack('!I', self._recv_exact_from_socket(client_socket, 4))[0]
+            key_len_data = await asyncio.wait_for(reader.readexactly(4), timeout=10)
+            key_len = struct.unpack('!I', key_len_data)[0]
             if key_len != 32:
-                raise Exception(f"Invalid public key length: {key_len}")
+                raise ValueError(f"Invalid public key length: {key_len}")
             
-            peer_public_key_bytes = self._recv_exact_from_socket(client_socket, key_len)
+            peer_public_key_bytes = await asyncio.wait_for(reader.readexactly(key_len), timeout=10)
             
             # Send our public key
             our_public_key = self.identity.get_public_key_bytes()
-            client_socket.sendall(struct.pack('!I', len(our_public_key)))
-            client_socket.sendall(our_public_key)
+            writer.write(struct.pack('!I', len(our_public_key)))
+            writer.write(our_public_key)
+            await writer.drain()
             
             # Derive session keys
             peer_public_key = crypto.IdentityKeyPair.from_public_bytes(peer_public_key_bytes)
@@ -467,14 +599,13 @@ class P2PServer:
             fingerprint = crypto.generate_fingerprint(peer_public_key_bytes)
             
             # Receive the client's handshake message
-            # First, receive enough data to parse the header
-            header_data = self._recv_exact_from_socket(client_socket, Protocol.HEADER_SIZE)
+            header_data = await asyncio.wait_for(reader.readexactly(Protocol.HEADER_SIZE), timeout=15)
             
             # Parse header to get payload length
             version, msg_type_int, payload_length = struct.unpack('!BHI', header_data)
             
             # Receive the full payload
-            payload_data = self._recv_exact_from_socket(client_socket, payload_length)
+            payload_data = await asyncio.wait_for(reader.readexactly(payload_length), timeout=15)
             
             # Combine header and payload for unpacking
             full_message = header_data + payload_data
@@ -482,40 +613,51 @@ class P2PServer:
             # Verify it's a handshake
             msg_type, handshake_payload, _ = Protocol.unpack_message(full_message)
             if msg_type != MessageType.HANDSHAKE:
-                raise Exception("Expected HANDSHAKE message")
+                raise ValueError("Expected HANDSHAKE message")
+            
+            logger.debug(f"Received handshake from {handshake_payload.get('username')} (fingerprint: {fingerprint[:16]}...)")
             
             # Notify callback with established connection and handshake info
             if self.on_connection_callback:
-                self.on_connection_callback(
-                    client_socket,
-                    session_keys,
-                    fingerprint,
-                    address,
-                    handshake_payload
-                )
+                if asyncio.iscoroutinefunction(self.on_connection_callback):
+                    await self.on_connection_callback(
+                        reader,
+                        writer,
+                        session_keys,
+                        fingerprint,
+                        address,
+                        handshake_payload
+                    )
+                else:
+                    self.on_connection_callback(
+                        reader,
+                        writer,
+                        session_keys,
+                        fingerprint,
+                        address,
+                        handshake_payload
+                    )
                 
-        except Exception as e:
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout handling connection from {address}")
             try:
-                client_socket.close()
+                writer.close()
+                await writer.wait_closed()
             except:
                 pass
-    
-    def _recv_exact_from_socket(self, sock: socket.socket, n: int) -> bytes:
-        """Receive exactly n bytes from socket."""
-        data = b''
-        while len(data) < n:
-            packet = sock.recv(n - len(data))
-            if not packet:
-                raise Exception("Connection closed")
-            data += packet
-        return data
+        except Exception as e:
+            logger.error(f"Error handling connection from {address}: {e}")
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except:
+                pass
 
 
 class NetworkManager:
-    """Manages all P2P connections and group chat routing with automatic reconnection."""
+    """Manages all P2P connections and group chat routing with automatic reconnection using asyncio."""
     
     # Configuration constants
-    THREAD_JOIN_TIMEOUT = 2.0  # Timeout for thread shutdown
     RECONNECT_INTERVAL = 60  # Reconnection attempt interval in seconds
     MANAGER_LOOP_INTERVAL = 10  # Connection manager check interval in seconds
     
@@ -540,86 +682,92 @@ class NetworkManager:
         
         # Background connection management
         self.auto_reconnect_enabled = True
-        self.connection_manager_thread: Optional[threading.Thread] = None
+        self.connection_manager_task: Optional[asyncio.Task] = None
         self.running = False
         
-        self.lock = threading.Lock()
+        self._lock = asyncio.Lock()
     
-    def start_server(self) -> bool:
+    async def start_server(self) -> bool:
         """Start listening for incoming connections and background connection manager."""
         self.server.on_connection_callback = self._handle_incoming_connection
-        success = self.server.start()
+        success = await self.server.start()
         
         if success:
             # Start background connection manager
             self.running = True
-            self.connection_manager_thread = threading.Thread(
-                target=self._connection_manager_loop, 
-                daemon=True
-            )
-            self.connection_manager_thread.start()
+            self.connection_manager_task = asyncio.create_task(self._connection_manager_loop())
         
         return success
     
-    def stop_server(self):
-        """Stop listening for connections and background threads."""
+    async def stop_server(self):
+        """Stop listening for connections and background tasks."""
         self.running = False
-        self.server.stop()
+        await self.server.stop()
         
-        if self.connection_manager_thread:
-            self.connection_manager_thread.join(timeout=self.THREAD_JOIN_TIMEOUT)
+        if self.connection_manager_task and not self.connection_manager_task.done():
+            self.connection_manager_task.cancel()
+            try:
+                await self.connection_manager_task
+            except asyncio.CancelledError:
+                pass
     
-    def _connection_manager_loop(self):
+    async def _connection_manager_loop(self):
         """
-        Background thread that manages connections.
+        Background task that manages connections.
         - Monitors connection health
         - Attempts automatic reconnection to offline contacts
         - Handles stale connections
         """
-        last_reconnect_attempt = time.time()
+        logger.debug("Connection manager loop started")
+        last_reconnect_attempt = asyncio.get_event_loop().time()
         
-        while self.running:
-            time.sleep(self.MANAGER_LOOP_INTERVAL)
-            
-            if not self.auto_reconnect_enabled:
-                continue
-            
-            # Check if it's time to attempt reconnections
-            if time.time() - last_reconnect_attempt < self.RECONNECT_INTERVAL:
-                continue
-            
-            last_reconnect_attempt = time.time()
-            
-            # Get all contacts
-            contacts = self.contact_manager.get_all_contacts()
-            
-            for contact in contacts:
-                # Skip if already connected
-                if self.is_connected(contact.uid):
+        try:
+            while self.running:
+                await asyncio.sleep(self.MANAGER_LOOP_INTERVAL)
+                
+                if not self.auto_reconnect_enabled:
                     continue
                 
-                # Attempt to connect in background
-                # Silently fail - connection issues are expected and will retry later
-                try:
-                    self.connect_to_peer(contact)
-                except (ConnectionError, socket.timeout, OSError):
-                    pass  # Expected network errors during reconnection attempts
-                except Exception:
-                    pass  # Catch-all for any unexpected errors
-            
-            # Clean up disconnected connections
-            with self.lock:
-                disconnected = [
-                    uid for uid, conn in self.connections.items()
-                    if conn.state == ConnectionState.DISCONNECTED or conn.state == ConnectionState.ERROR
-                ]
+                # Check if it's time to attempt reconnections
+                if asyncio.get_event_loop().time() - last_reconnect_attempt < self.RECONNECT_INTERVAL:
+                    continue
                 
-                for uid in disconnected:
-                    del self.connections[uid]
+                last_reconnect_attempt = asyncio.get_event_loop().time()
+                
+                # Get all contacts
+                contacts = self.contact_manager.get_all_contacts()
+                
+                for contact in contacts:
+                    # Skip if already connected
+                    if self.is_connected(contact.uid):
+                        continue
+                    
+                    # Attempt to connect in background
+                    # Silently fail - connection issues are expected and will retry later
+                    try:
+                        await self.connect_to_peer(contact)
+                    except (ConnectionError, OSError, asyncio.TimeoutError):
+                        pass  # Expected network errors during reconnection attempts
+                    except Exception:
+                        pass  # Catch-all for any unexpected errors
+                
+                # Clean up disconnected connections
+                async with self._lock:
+                    disconnected = [
+                        uid for uid, conn in self.connections.items()
+                        if conn.state == ConnectionState.DISCONNECTED or conn.state == ConnectionState.ERROR
+                    ]
+                    
+                    for uid in disconnected:
+                        del self.connections[uid]
+        except asyncio.CancelledError:
+            logger.debug("Connection manager loop cancelled")
+        finally:
+            logger.debug("Connection manager loop ended")
     
-    def connect_to_peer(self, contact: Contact) -> bool:
+    async def connect_to_peer(self, contact: Contact) -> bool:
         """Establish connection to a peer."""
-        with self.lock:
+        async with self._lock:
             if contact.uid in self.connections:
                 return True  # Already connected
             
@@ -628,46 +776,56 @@ class NetworkManager:
             connection.on_group_message_callback = self._handle_group_message
             connection.on_state_change_callback = self._handle_state_change
             
-            if connection.connect():
+            if await connection.connect():
                 self.connections[contact.uid] = connection
                 return True
             return False
     
-    def connect_all_contacts(self) -> Dict[str, bool]:
+    async def connect_all_contacts(self) -> Dict[str, bool]:
         """
         Establish connections to all contacts on login.
         
         Returns dictionary mapping contact UIDs to connection success status.
-        This method is called when user logs in to establish all P2P connections.
         """
         results = {}
         contacts = self.contact_manager.get_all_contacts()
         
+        # Create connection tasks for all contacts
+        tasks = []
         for contact in contacts:
-            try:
-                success = self.connect_to_peer(contact)
-                results[contact.uid] = success
-            except Exception:
-                results[contact.uid] = False
+            task = asyncio.create_task(self._connect_with_result(contact, results))
+            tasks.append(task)
+        
+        # Wait for all connections to complete
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         
         return results
     
-    def disconnect_from_peer(self, uid: str):
+    async def _connect_with_result(self, contact: Contact, results: Dict):
+        """Helper to connect and store result."""
+        try:
+            success = await self.connect_to_peer(contact)
+            results[contact.uid] = success
+        except Exception:
+            results[contact.uid] = False
+    
+    async def disconnect_from_peer(self, uid: str):
         """Disconnect from a peer."""
-        with self.lock:
+        async with self._lock:
             if uid in self.connections:
-                self.connections[uid].disconnect()
+                await self.connections[uid].disconnect()
                 del self.connections[uid]
     
-    def send_message(self, uid: str, message: str, message_id: str, timestamp: str) -> bool:
+    async def send_message(self, uid: str, message: str, message_id: str, timestamp: str) -> bool:
         """Send direct message to a peer."""
         connection = self.connections.get(uid)
         if connection and connection.state == ConnectionState.AUTHENTICATED:
-            return connection.send_message(message, message_id, timestamp)
+            return await connection.send_message(message, message_id, timestamp)
         return False
     
-    def send_group_message(self, group_id: str, message: str, 
-                          message_id: str, timestamp: str) -> int:
+    async def send_group_message(self, group_id: str, message: str, 
+                                  message_id: str, timestamp: str) -> int:
         """
         Send message to all members of a group.
         
@@ -677,31 +835,36 @@ class NetworkManager:
             return 0
         
         success_count = 0
+        tasks = []
+        
         for member_uid in self.group_members[group_id]:
             if member_uid == self.my_uid:
                 continue  # Don't send to ourselves
             
             connection = self.connections.get(member_uid)
             if connection and connection.state == ConnectionState.AUTHENTICATED:
-                if connection.send_group_message(group_id, message_id, message, timestamp):
-                    success_count += 1
+                task = connection.send_group_message(group_id, message_id, message, timestamp)
+                tasks.append(task)
+        
+        # Send to all members concurrently
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            success_count = sum(1 for r in results if r is True)
         
         return success_count
     
     def add_group_member(self, group_id: str, uid: str):
         """Add a member to a group."""
-        with self.lock:
-            if group_id not in self.group_members:
-                self.group_members[group_id] = set()
-            self.group_members[group_id].add(uid)
+        if group_id not in self.group_members:
+            self.group_members[group_id] = set()
+        self.group_members[group_id].add(uid)
     
     def remove_group_member(self, group_id: str, uid: str):
         """Remove a member from a group."""
-        with self.lock:
-            if group_id in self.group_members:
-                self.group_members[group_id].discard(uid)
-                if not self.group_members[group_id]:
-                    del self.group_members[group_id]
+        if group_id in self.group_members:
+            self.group_members[group_id].discard(uid)
+            if not self.group_members[group_id]:
+                del self.group_members[group_id]
     
     def is_connected(self, uid: str) -> bool:
         """Check if connected to a peer."""
@@ -767,84 +930,87 @@ class NetworkManager:
     def _handle_message(self, sender_uid: str, content: str, message_id: str, timestamp: str):
         """Handle received direct message."""
         if self.on_message_callback:
-            self.on_message_callback(sender_uid, content, message_id, timestamp)
+            if asyncio.iscoroutinefunction(self.on_message_callback):
+                asyncio.create_task(self.on_message_callback(sender_uid, content, message_id, timestamp))
+            else:
+                self.on_message_callback(sender_uid, content, message_id, timestamp)
     
     def _handle_group_message(self, group_id: str, sender_uid: str, 
-                             content: str, message_id: str, timestamp: str):
+                              content: str, message_id: str, timestamp: str):
         """Handle received group message."""
         if self.on_group_message_callback:
-            self.on_group_message_callback(group_id, sender_uid, content, message_id, timestamp)
+            if asyncio.iscoroutinefunction(self.on_group_message_callback):
+                asyncio.create_task(self.on_group_message_callback(group_id, sender_uid, content, message_id, timestamp))
+            else:
+                self.on_group_message_callback(group_id, sender_uid, content, message_id, timestamp)
     
     def _handle_state_change(self, uid: str, state: ConnectionState):
         """Handle connection state change."""
         if self.on_connection_state_callback:
-            self.on_connection_state_callback(uid, state)
+            if asyncio.iscoroutinefunction(self.on_connection_state_callback):
+                asyncio.create_task(self.on_connection_state_callback(uid, state))
+            else:
+                self.on_connection_state_callback(uid, state)
     
-    def _handle_incoming_connection(self, client_socket: socket.socket, 
-                                    session_keys: Tuple, fingerprint: str, 
-                                    address: Tuple[str, int], handshake_payload: Dict):
+    async def _handle_incoming_connection(self, reader: asyncio.StreamReader, 
+                                           writer: asyncio.StreamWriter,
+                                           session_keys: Tuple, fingerprint: str, 
+                                           address: Tuple[str, int], handshake_payload: Dict):
         """Handle incoming connection from a peer."""
-        # 1. Create a P2PConnection from the accepted socket
-        # 2. Completing the handshake
-        # 3. Adding to connections dict
-        with self.lock:
+        async with self._lock:
             # Check if we already have a connection with this fingerprint
             for conn in self.connections.values():
                 if conn.contact.fingerprint == fingerprint:
                     # Already connected, close the new connection
-                    client_socket.close()
+                    writer.close()
+                    await writer.wait_closed()
                     return
 
             # Find the contact by fingerprint
             contact = self.contact_manager.get_contact_by_fingerprint(fingerprint)
             if not contact:
                 # Unknown contact, close the connection
-                client_socket.close()
+                writer.close()
+                await writer.wait_closed()
+                logger.warning(f"Rejected connection from unknown fingerprint: {fingerprint[:16]}...")
                 return
 
             # Create a new connection object
             connection = P2PConnection(contact, self.identity, self.my_uid, self.my_username)
-            connection.socket = client_socket
+            connection.reader = reader
+            connection.writer = writer
             connection.session_keys = session_keys
             connection.on_message_callback = self._handle_message
             connection.on_group_message_callback = self._handle_group_message
             connection.on_state_change_callback = self._handle_state_change
-
-            # Set socket timeout for long-running connection
-            client_socket.settimeout(1.0)
             
-            # Set state to AUTHENTICATED before starting threads
+            # Set state to AUTHENTICATED before starting tasks
             connection._set_state(ConnectionState.AUTHENTICATED)
 
             # Send handshake response
-            # Note: We send directly via socket instead of using send_queue because:
-            # 1. The send thread hasn't started yet
-            # 2. We need immediate synchronous sending to complete the handshake
             handshake_response = protocol.Protocol.create_handshake_response(
                 self.my_uid,
                 self.my_username,
                 crypto.generate_fingerprint(self.identity.get_public_key_bytes()),
                 accepted=True
             )
-            client_socket.sendall(handshake_response)
+            writer.write(handshake_response)
+            await writer.drain()
+            
+            logger.info(f"Accepted incoming connection from {contact.username}")
 
-            # Start threads
-            connection.receive_thread = threading.Thread(target=connection._receive_loop, daemon=True)
-            connection.receive_thread.start()
-
-            connection.send_thread = threading.Thread(target=connection._send_loop, daemon=True)
-            connection.send_thread.start()
-
-            # Start keepalive thread
-            keepalive_thread = threading.Thread(target=connection._keepalive_loop, daemon=True)
-            keepalive_thread.start()
+            # Start tasks
+            connection.receive_task = asyncio.create_task(connection._receive_loop())
+            connection.send_task = asyncio.create_task(connection._send_loop())
+            connection.keepalive_task = asyncio.create_task(connection._keepalive_loop())
 
             # Add to connections
             self.connections[contact.uid] = connection
     
-    def disconnect_all(self):
+    async def disconnect_all(self):
         """Disconnect from all peers."""
-        with self.lock:
-            for connection in list(self.connections.values()):
-                connection.disconnect()
+        async with self._lock:
+            tasks = [conn.disconnect() for conn in list(self.connections.values())]
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
             self.connections.clear()
