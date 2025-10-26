@@ -231,6 +231,32 @@ Share this information with contacts who want to add you:
 *   **Host:** Your IP address or hostname
 *   **Port:** Your listen port
 
+### Multi-Device Login (Parent-Child Sessions)
+
+**Exporting Identity for Another Device:**
+1.  Go to Settings (`Ctrl+S`) on your parent session
+2.  Click "Export Identity"
+3.  Identity file (.jidentity) is saved to identity_exports directory
+4.  Transfer file to other device securely (USB drive, secure file transfer)
+5.  On other device, import the identity file to create a child session
+
+**Parent Session Features:**
+*   Full account control including deletion
+*   Can manage child sessions via "Manage Sessions" button
+*   View IP addresses of child sessions
+*   Enable/disable child sessions
+*   Delete child sessions remotely
+
+**Child Session Features:**
+*   Full messaging and contact management
+*   Cannot delete account (parent only)
+*   Linked to parent for security monitoring
+
+**Benefits:**
+*   Maintain strong P2P server connections across multiple devices
+*   Always reachable when one device is online
+*   Parent can monitor and control all sessions for security
+
 ### Daily Use
 
 *   **Send Message:** Select contact, type message, press Enter or click Send
@@ -241,9 +267,11 @@ Share this information with contacts who want to add you:
 *   **Contact Info:** Press `Ctrl+I` to view contact or group details
 *   **Delete Contact/Group:** Press `Ctrl+D` or use `Ctrl+I` then click Delete button
 *   **Copy Data:** All UIDs, fingerprints, and link codes have copy buttons
-*   **Export Contact Card:** From Settings or Contact Details screens
+*   **Export Contact Card:** From Settings screen (only your own card)
+*   **Export Identity:** From Settings (parent sessions only) for multi-device login
+*   **Manage Sessions:** View and control child sessions (parent sessions only)
 *   **Lock App:** Press `Ctrl+L` to lock the application (keeps connections active)
-*   **Delete Account:** Access via Settings menu - removes all data permanently
+*   **Delete Account:** Access via Settings menu - removes all data permanently (parent only)
 *   **Quit:** Press `Ctrl+Q` or `Escape` to exit
 
 ### Keyboard Shortcuts

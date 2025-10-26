@@ -125,7 +125,8 @@ class ContactCardManager:
     @staticmethod
     def export_contact_card(identity: Identity, host: str, filepath: str) -> bool:
         """
-        Export identity to a contact card file (.jcard format).
+        Export own identity to a contact card file (.jcard format) for sharing.
+        Only exports user's own identity - not other contacts.
         Returns True if successful.
         """
         try:
@@ -174,33 +175,6 @@ class ContactCardManager:
             return card_data
         except Exception:
             return None
-
-    @staticmethod
-    def export_contact_to_card(contact: Contact, filepath: str) -> bool:
-        """
-        Export a contact to a contact card file.
-        Returns True if successful.
-        """
-        try:
-            card_data = {
-                'version': '1.0',
-                'type': 'jarvis_contact_card',
-                'uid': contact.uid,
-                'username': contact.username,
-                'public_key': contact.public_key,
-                'fingerprint': contact.fingerprint,
-                'host': contact.host,
-                'port': contact.port,
-                'verified': contact.verified,
-                'exported_at': datetime.now().isoformat()
-            }
-
-            with open(filepath, 'w') as f:
-                json.dump(card_data, f, indent=2)
-            
-            return True
-        except Exception:
-            return False
 
 
 class LoadIdentityScreen(ModalScreen):
@@ -667,15 +641,18 @@ class SettingsScreen(ModalScreen):
         Binding("escape", "cancel", "Cancel"),
     ]
 
-    def __init__(self, identity: Identity):
+    def __init__(self, identity: Identity, is_parent_session: bool = True):
         super().__init__()
         self.identity = identity
+        self.is_parent_session = is_parent_session
 
     def compose(self) -> ComposeResult:
         """Compose the screen layout."""
         with Container(id="settings-dialog"):
             yield Label("Settings", id="dialog-title")
             yield Label(f"Username: {self.identity.username}", id="username-label")
+            yield Label(f"Session Type: {'Parent' if self.is_parent_session else 'Child'}", 
+                       id="session-type-label")
             yield Label(f"UID:", id="uid-label")
             yield Input(value=self.identity.uid, id="uid-display", disabled=True)
             yield Button("Copy UID", variant="default", id="copy-uid-btn")
@@ -692,11 +669,23 @@ class SettingsScreen(ModalScreen):
                 Button("Export Contact Card", variant="default", id="export-card-btn"),
                 id="button-row-1"
             )
-            yield Horizontal(
-                Button("Delete Account", variant="error", id="delete-account-btn"),
-                Button("Close", variant="default", id="close-btn"),
-                id="button-row-2"
-            )
+            
+            if self.is_parent_session:
+                yield Horizontal(
+                    Button("Export Identity", variant="default", id="export-identity-btn"),
+                    Button("Manage Sessions", variant="default", id="manage-sessions-btn"),
+                    id="button-row-2"
+                )
+                yield Horizontal(
+                    Button("Delete Account", variant="error", id="delete-account-btn"),
+                    Button("Close", variant="default", id="close-btn"),
+                    id="button-row-3"
+                )
+            else:
+                yield Horizontal(
+                    Button("Close", variant="default", id="close-btn"),
+                    id="button-row-2"
+                )
 
     def on_mount(self) -> None:
         """Generate link code on mount."""
@@ -719,6 +708,10 @@ class SettingsScreen(ModalScreen):
                 pass
         elif event.button.id == "export-card-btn":
             self.dismiss("export_card")
+        elif event.button.id == "export-identity-btn":
+            self.dismiss("export_identity")
+        elif event.button.id == "manage-sessions-btn":
+            self.dismiss("manage_sessions")
         elif event.button.id == "copy-uid-btn":
             try:
                 pyperclip.copy(self.identity.uid)
@@ -733,6 +726,75 @@ class SettingsScreen(ModalScreen):
                 pass
         elif event.button.id == "delete-account-btn":
             self.dismiss("delete_account")
+        elif event.button.id == "close-btn":
+            self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        """Cancel and close."""
+        self.dismiss(None)
+
+
+class SessionManagementScreen(ModalScreen):
+    """Screen for managing parent and child sessions."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, session_manager, current_session_id: str):
+        super().__init__()
+        self.session_manager = session_manager
+        self.current_session_id = current_session_id
+
+    def compose(self) -> ComposeResult:
+        """Compose the screen layout."""
+        with Container(id="sessions-dialog"):
+            yield Label("Session Management", id="dialog-title")
+            yield Label("Active Sessions:", id="sessions-label")
+            yield ListView(id="sessions-list")
+            yield Horizontal(
+                Button("Disable Session", variant="default", id="disable-btn"),
+                Button("Enable Session", variant="default", id="enable-btn"),
+                Button("Delete Session", variant="error", id="delete-btn"),
+                Button("Close", variant="default", id="close-btn"),
+                id="button-row"
+            )
+
+    def on_mount(self) -> None:
+        """Populate sessions list."""
+        sessions_list = self.query_one("#sessions-list", ListView)
+        child_sessions = self.session_manager.get_child_sessions(self.current_session_id)
+        
+        if not child_sessions:
+            sessions_list.append(ListItem(Label("No child sessions")))
+        else:
+            for session in child_sessions:
+                status = "Enabled" if session.enabled else "Disabled"
+                label_text = f"Session {session.session_id[:8]}... | {session.ip_address} | {status}"
+                sessions_list.append(ListItem(Label(label_text)))
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        sessions_list = self.query_one("#sessions-list", ListView)
+        
+        if event.button.id == "disable-btn":
+            if sessions_list.index is not None and sessions_list.index >= 0:
+                child_sessions = self.session_manager.get_child_sessions(self.current_session_id)
+                if child_sessions and sessions_list.index < len(child_sessions):
+                    session = child_sessions[sessions_list.index]
+                    self.dismiss(("disable", session.session_id))
+        elif event.button.id == "enable-btn":
+            if sessions_list.index is not None and sessions_list.index >= 0:
+                child_sessions = self.session_manager.get_child_sessions(self.current_session_id)
+                if child_sessions and sessions_list.index < len(child_sessions):
+                    session = child_sessions[sessions_list.index]
+                    self.dismiss(("enable", session.session_id))
+        elif event.button.id == "delete-btn":
+            if sessions_list.index is not None and sessions_list.index >= 0:
+                child_sessions = self.session_manager.get_child_sessions(self.current_session_id)
+                if child_sessions and sessions_list.index < len(child_sessions):
+                    session = child_sessions[sessions_list.index]
+                    self.dismiss(("delete", session.session_id))
         elif event.button.id == "close-btn":
             self.dismiss(None)
 
@@ -776,7 +838,6 @@ class ContactDetailsScreen(ModalScreen):
                 id="button-row-1"
             )
             yield Horizontal(
-                Button("Export Contact Card", variant="default", id="export-card-btn"),
                 Button("Delete Contact", variant="error", id="delete-contact-btn"),
                 Button("Close", variant="default", id="close-btn"),
                 id="button-row-2"
@@ -798,8 +859,6 @@ class ContactDetailsScreen(ModalScreen):
                 self.query_one("#fp-label").update("Fingerprint: (copied!)")
             except Exception:
                 pass
-        elif event.button.id == "export-card-btn":
-            self.dismiss("export_card")
         elif event.button.id == "delete-contact-btn":
             self.dismiss("delete")
         elif event.button.id == "close-btn":
@@ -953,7 +1012,8 @@ class JarvisApp(App):
     }
 
     #identity-dialog, #add-contact-dialog, #create-group-dialog, #settings-dialog, 
-    #lock-dialog, #delete-account-dialog, #contact-details-dialog, #group-details-dialog {
+    #lock-dialog, #delete-account-dialog, #contact-details-dialog, #group-details-dialog,
+    #sessions-dialog {
         align: center middle;
         width: 80;
         height: auto;
@@ -1121,6 +1181,10 @@ class JarvisApp(App):
         self.message_store = MessageStore(os.path.join(data_dir, 'messages.json'))
         self.group_manager = GroupManager(os.path.join(data_dir, 'groups.json'))
         self.network_manager: Optional[NetworkManager] = None
+        
+        # Import SessionManager
+        from .session import SessionManager
+        self.session_manager = SessionManager(os.path.join(data_dir, 'sessions.json'))
 
         self.current_contact: Optional[Contact] = None
         self.current_group: Optional[Group] = None
@@ -1156,6 +1220,9 @@ class JarvisApp(App):
             return
 
         self.identity, self.password = result
+        
+        # Create parent session
+        self.session_manager.create_parent_session(self.identity.uid)
 
         # Initialize network manager
         self.network_manager = NetworkManager(
@@ -1429,7 +1496,8 @@ class JarvisApp(App):
 
     async def _show_settings(self) -> None:
         """Worker to show settings screen."""
-        result = await self.push_screen_wait(SettingsScreen(self.identity))
+        is_parent = self.session_manager.is_parent_session()
+        result = await self.push_screen_wait(SettingsScreen(self.identity, is_parent))
         
         if result == "export_card":
             # Export contact card
@@ -1448,7 +1516,56 @@ class JarvisApp(App):
             except Exception as e:
                 self.notify(f"Error exporting contact card: {str(e)}", severity="error")
         
+        elif result == "export_identity":
+            # Export identity for creating child session
+            try:
+                export_dir = os.path.join(self.data_dir, 'identity_exports')
+                os.makedirs(export_dir, exist_ok=True)
+                
+                filename = f"{self.identity.username}_identity_{self.identity.uid[:8]}.jidentity"
+                filepath = os.path.join(export_dir, filename)
+                
+                if self.identity_manager.export_identity(self.password, filepath):
+                    # Create child session record
+                    current_session = self.session_manager.get_current_session()
+                    if current_session:
+                        child_session = self.session_manager.create_child_session(
+                            self.identity.uid,
+                            current_session.session_id
+                        )
+                    self.notify(f"Identity exported to: {filepath}", severity="information")
+                    self.notify("This creates a child session for multi-device login", severity="information")
+                else:
+                    self.notify("Failed to export identity", severity="error")
+            except Exception as e:
+                self.notify(f"Error exporting identity: {str(e)}", severity="error")
+        
+        elif result == "manage_sessions":
+            # Show session management screen
+            current_session = self.session_manager.get_current_session()
+            if current_session:
+                session_result = await self.push_screen_wait(
+                    SessionManagementScreen(self.session_manager, current_session.session_id)
+                )
+                
+                if session_result:
+                    action, session_id = session_result
+                    if action == "disable":
+                        if self.session_manager.disable_session(session_id):
+                            self.notify("Session disabled", severity="information")
+                    elif action == "enable":
+                        if self.session_manager.enable_session(session_id):
+                            self.notify("Session enabled", severity="information")
+                    elif action == "delete":
+                        if self.session_manager.delete_session(session_id):
+                            self.notify("Session deleted", severity="information")
+        
         elif result == "delete_account":
+            # Only parent sessions can delete account
+            if not is_parent:
+                self.notify("Only parent sessions can delete accounts", severity="warning")
+                return
+            
             # Show delete account confirmation
             delete_result = await self.push_screen_wait(
                 DeleteAccountScreen(self.identity, self.password)
