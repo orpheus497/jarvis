@@ -1,11 +1,11 @@
 # Jarvis 🛡️
 
-**Version 1.1.0** - _A terminal-based peer-to-peer end-to-end encrypted messenger._
+**Version 1.2.0** - _A terminal-based peer-to-peer end-to-end encrypted messenger._
 
 Created by **orpheus497**.
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Termux-lightgrey)
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
@@ -88,7 +88,7 @@ Your conversations remain completely under your control.
 
 ## Screenshots
 
-*Coming soon - terminal screenshots*
+The application features a terminal-based UI with real-time connection status, message history, and contact management.
 
 ---
 
@@ -773,18 +773,6 @@ Contributions are welcome! Please:
 MIT License - see `LICENSE` file for details.
 
 Copyright (c) 2025 orpheus497
-
----
-
-## Roadmap
-
-Future considerations (not promises):
-
-- [ ] Voice calling (encrypted audio streams)
-- [ ] File transfers (encrypted P2P file sharing)
-- [ ] Mobile apps (native Android/iOS)
-- [ ] Tor integration (anonymous connections)
-- [ ] Contact discovery (via fingerprint)
 
 ---
 

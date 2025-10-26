@@ -292,6 +292,74 @@ class JarvisClient:
             return response.get('messages', [])
         return []
     
+    def mark_messages_read(self, uid: str) -> bool:
+        """
+        Mark all messages from a contact as read.
+        
+        Args:
+            uid: Contact UID
+        
+        Returns:
+            Success status
+        """
+        response = self._send_request('mark_messages_read', {'uid': uid})
+        return response.get('success', False)
+    
+    def mark_group_messages_read(self, group_id: str) -> bool:
+        """
+        Mark all messages in a group as read.
+        
+        Args:
+            group_id: Group ID
+        
+        Returns:
+            Success status
+        """
+        response = self._send_request('mark_group_messages_read', {'group_id': group_id})
+        return response.get('success', False)
+    
+    def get_unread_count(self, uid: str) -> int:
+        """
+        Get unread message count for a contact.
+        
+        Args:
+            uid: Contact UID
+        
+        Returns:
+            Number of unread messages
+        """
+        response = self._send_request('get_unread_count', {'uid': uid})
+        if response.get('success'):
+            return response.get('count', 0)
+        return 0
+    
+    def get_group_unread_count(self, group_id: str) -> int:
+        """
+        Get unread message count for a group.
+        
+        Args:
+            group_id: Group ID
+        
+        Returns:
+            Number of unread messages
+        """
+        response = self._send_request('get_group_unread_count', {'group_id': group_id})
+        if response.get('success'):
+            return response.get('count', 0)
+        return 0
+    
+    def get_total_unread_count(self) -> int:
+        """
+        Get total unread message count across all contacts and groups.
+        
+        Returns:
+            Total number of unread messages
+        """
+        response = self._send_request('get_total_unread_count')
+        if response.get('success'):
+            return response.get('count', 0)
+        return 0
+    
     # Contacts
     
     def add_contact(self, uid: str, username: str, public_key: str,

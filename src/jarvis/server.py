@@ -38,6 +38,11 @@ class ServerCommand:
     SEND_GROUP_MESSAGE = "send_group_message"
     GET_MESSAGES = "get_messages"
     GET_GROUP_MESSAGES = "get_group_messages"
+    MARK_MESSAGES_READ = "mark_messages_read"
+    MARK_GROUP_MESSAGES_READ = "mark_group_messages_read"
+    GET_UNREAD_COUNT = "get_unread_count"
+    GET_GROUP_UNREAD_COUNT = "get_group_unread_count"
+    GET_TOTAL_UNREAD_COUNT = "get_total_unread_count"
     
     # Contacts
     ADD_CONTACT = "add_contact"
@@ -288,6 +293,21 @@ class JarvisServer:
             
             elif command == ServerCommand.GET_GROUP_MESSAGES:
                 return self._handle_get_group_messages(params)
+            
+            elif command == ServerCommand.MARK_MESSAGES_READ:
+                return self._handle_mark_messages_read(params)
+            
+            elif command == ServerCommand.MARK_GROUP_MESSAGES_READ:
+                return self._handle_mark_group_messages_read(params)
+            
+            elif command == ServerCommand.GET_UNREAD_COUNT:
+                return self._handle_get_unread_count(params)
+            
+            elif command == ServerCommand.GET_GROUP_UNREAD_COUNT:
+                return self._handle_get_group_unread_count(params)
+            
+            elif command == ServerCommand.GET_TOTAL_UNREAD_COUNT:
+                return self._handle_get_total_unread_count()
             
             elif command == ServerCommand.ADD_CONTACT:
                 return self._handle_add_contact(params)
@@ -541,6 +561,76 @@ class JarvisServer:
                 }
                 for msg in messages
             ]
+        }
+    
+    def _handle_mark_messages_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle mark messages as read command."""
+        if not self.message_store:
+            return {'success': False, 'error': 'Not logged in'}
+        
+        uid = params.get('uid')
+        if not uid:
+            return {'success': False, 'error': 'Missing uid'}
+        
+        self.message_store.mark_conversation_read(uid)
+        
+        return {'success': True}
+    
+    def _handle_mark_group_messages_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle mark group messages as read command."""
+        if not self.message_store:
+            return {'success': False, 'error': 'Not logged in'}
+        
+        group_id = params.get('group_id')
+        if not group_id:
+            return {'success': False, 'error': 'Missing group_id'}
+        
+        self.message_store.mark_group_conversation_read(group_id)
+        
+        return {'success': True}
+    
+    def _handle_get_unread_count(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle get unread count command."""
+        if not self.message_store:
+            return {'success': False, 'error': 'Not logged in'}
+        
+        uid = params.get('uid')
+        if not uid:
+            return {'success': False, 'error': 'Missing uid'}
+        
+        count = self.message_store.get_unread_count(uid)
+        
+        return {
+            'success': True,
+            'count': count
+        }
+    
+    def _handle_get_group_unread_count(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle get group unread count command."""
+        if not self.message_store:
+            return {'success': False, 'error': 'Not logged in'}
+        
+        group_id = params.get('group_id')
+        if not group_id:
+            return {'success': False, 'error': 'Missing group_id'}
+        
+        count = self.message_store.get_group_unread_count(group_id)
+        
+        return {
+            'success': True,
+            'count': count
+        }
+    
+    def _handle_get_total_unread_count(self) -> Dict[str, Any]:
+        """Handle get total unread count command."""
+        if not self.message_store:
+            return {'success': False, 'error': 'Not logged in'}
+        
+        count = self.message_store.get_total_unread_count()
+        
+        return {
+            'success': True,
+            'count': count
         }
     
     def _handle_add_contact(self, params: Dict[str, Any]) -> Dict[str, Any]:
