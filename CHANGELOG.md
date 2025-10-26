@@ -8,6 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Client-server architecture for persistent connections
+  - Background server process maintains P2P connections continuously
+  - Foreground UI acts as client connecting to background server
+  - IPC communication between client and server using JSON-RPC over sockets
+  - Server process runs independently and persists when UI closes
+  - Single server instance per data directory managed via PID file
+  - Automatic server startup when launching UI
+  - Server manages all network connections, identity, contacts, messages, and groups
+- Server daemon module (`jarvis.server`)
+  - Background server process for maintaining P2P connections
+  - IPC interface for client communication (default port: 5999)
+  - Command handling for all operations (messaging, contacts, groups, identity)
+  - Event broadcasting to connected clients for real-time updates
+  - PID file management for single instance enforcement
+  - Signal handlers for graceful shutdown
+- Client API module (`jarvis.client`)
+  - Client interface for communicating with background server
+  - Asynchronous event handling for server broadcasts
+  - Synchronous request-response pattern for commands
+  - Event callback system for real-time notifications
+- Client adapter module (`jarvis.client_adapter`)
+  - Compatibility layer providing NetworkManager-like interface
+  - Server-managed contact and group managers
+  - Minimal changes to UI code required
+- Server entry point (`jarvis-server` command)
+  - Can be run independently for debugging or advanced usage
+  - Supports custom data directory and IPC port configuration
 - Automatic connection to all contacts on login
   - `connect_all_contacts()` now called automatically after server starts
   - Connection status notifications show successful/failed connections
@@ -35,6 +62,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Detailed error messages for failed operations
 
 ### Changed
+- Application architecture refactored to client-server model
+  - Server process handles all P2P networking in background
+  - UI process acts as lightweight client
+  - Connections persist even when UI is closed
+  - Multiple UI instances can connect to same server
+- Main entry point starts server automatically if not running
+  - Checks for existing server via PID file
+  - Launches detached server process in background
+  - UI connects to server via IPC
 - Network initialization now automatically connects to all contacts
   - Removed manual connection requirement
   - Reports connection statistics on startup
@@ -57,6 +93,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Warnings about fingerprint verification prominent
 
 ### Fixed
+- Connections now persist across UI restarts
+  - Background server maintains connections continuously
+  - UI can be closed and reopened without disconnecting from contacts
+  - Server handles reconnection logic automatically
 - Connections between separate devices now establish automatically
   - Critical bug: `connect_all_contacts()` was defined but never called
   - Server would start but never initiate outgoing connections
@@ -76,6 +116,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixes NULL pointer dereference vulnerability (CVE-2024-0727)
   - Fixes Bleichenbacher timing oracle attack vulnerability (CVE-2023-50782)
   - All known vulnerabilities in dependencies resolved
+- Server process runs with appropriate isolation
+  - IPC communication restricted to localhost
+  - PID file prevents multiple server instances
+  - Server validates all client commands
 
 ### Removed
 - Multi-device login system (parent-child sessions)
@@ -86,13 +130,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Simplified SessionManager to handle single session type
   - Simplified Identity export to complete account backup only
 
-### Changed
-- Settings screen simplified to remove session type display
-- Export functionality changed to "Export Account" for complete account backup
-- SessionManager API simplified (removed parent-child methods)
-- IdentityManager export methods simplified
-- Account deletion no longer restricted to parent sessions
-- Minimum required cryptography version now 42.0.4
+### Architecture
+- Client-server model ensures persistent connections
+  - Background server process maintains all P2P connections
+  - UI clients connect to server via IPC (port 5999 by default)
+  - Server handles all cryptographic operations and message routing
+  - Multiple UI clients can connect to same server instance
+  - Connections remain active when UI is closed
+- IPC protocol uses JSON-RPC over TCP sockets
+  - Request-response pattern for commands
+  - Event broadcasting for real-time updates
+  - Newline-delimited JSON messages
+  - Timeout handling for reliability
 
 ## [1.1.0] - 2025-10-26
 
