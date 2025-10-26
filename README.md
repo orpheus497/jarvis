@@ -152,10 +152,10 @@ python -m jarvis
 
 **Requirements:** 
 - Python 3.8 or higher
-- textual (MIT License)
-- cryptography (Apache 2.0/BSD License)
-- argon2-cffi (MIT License)
-- rich (MIT License)
+- textual >= 0.47.0 (MIT License)
+- cryptography >= 42.0.4 (Apache 2.0/BSD License) - with security fixes
+- argon2-cffi >= 23.1.0 (MIT License)
+- rich >= 13.7.0 (MIT License)
 
 All dependencies are installed automatically by the setup scripts.
 

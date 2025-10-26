@@ -47,7 +47,7 @@ setup(
     python_requires='>=3.8',
     install_requires=[
         'textual>=0.47.0',
-        'cryptography>=41.0.7',
+        'cryptography>=42.0.4',
         'argon2-cffi>=23.1.0',
         'rich>=13.7.0',
     ],

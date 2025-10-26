@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Updated cryptography library from 41.0.7 to 42.0.4
+  - Fixes NULL pointer dereference vulnerability (CVE-2024-0727)
+  - Fixes Bleichenbacher timing oracle attack vulnerability (CVE-2023-50782)
+  - All known vulnerabilities in dependencies resolved
+
 ### Removed
 - Multi-device login system (parent-child sessions)
   - Removed SessionManagementScreen UI
@@ -22,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SessionManager API simplified (removed parent-child methods)
 - IdentityManager export methods simplified
 - Account deletion no longer restricted to parent sessions
+- Minimum required cryptography version now 42.0.4
 
 ## [1.1.0] - 2025-10-26
 
