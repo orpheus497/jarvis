@@ -80,6 +80,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Group creation UI stability when selecting invitees
 - Worker-related crashes in modal screens
 - Connection state management and automatic reconnection
+- P2P connection establishment between separate machine instances
+  - Fixed client-side handshake flow to properly wait for HANDSHAKE_RESPONSE
+  - Fixed server-side to receive and process client's HANDSHAKE message before sending response
+  - Fixed connection state initialization for incoming connections
+  - Ensured receive/send threads start only after connection is fully authenticated
+  - Added proper socket timeout handling for persistent connections
+  - Improved synchronization between connection endpoints
 
 ### Security
 - Lock feature maintains encryption and connection security

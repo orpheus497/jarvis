@@ -119,6 +119,28 @@ class P2PConnection:
             )
             self.socket.sendall(handshake)
             
+            # Wait for handshake response
+            header_data = self._recv_exact(Protocol.HEADER_SIZE)
+            version, msg_type_int, payload_length = struct.unpack('!BHI', header_data)
+            
+            # Receive the full payload
+            payload_data = self._recv_exact(payload_length)
+            full_message = header_data + payload_data
+            
+            # Unpack and verify handshake response
+            msg_type, response_payload, _ = Protocol.unpack_message(full_message)
+            if msg_type != MessageType.HANDSHAKE_RESPONSE:
+                raise Exception(f"Expected HANDSHAKE_RESPONSE, got {msg_type}")
+            
+            if not response_payload.get('accepted', False):
+                raise Exception("Handshake rejected by peer")
+            
+            # Mark as authenticated
+            self._set_state(ConnectionState.AUTHENTICATED)
+            
+            # Set socket timeout for long-running connection
+            self.socket.settimeout(1.0)
+            
             # Start threads
             self.receive_thread = threading.Thread(target=self._receive_loop, daemon=True)
             self.receive_thread.start()
@@ -253,9 +275,9 @@ class P2PConnection:
         """Handle received message based on type."""
         
         if msg_type == MessageType.HANDSHAKE_RESPONSE:
-            # Handshake accepted, mark as authenticated
-            if payload.get('accepted', False):
-                self._set_state(ConnectionState.AUTHENTICATED)
+            # Handshake response is now handled during connection establishment
+            # This should not occur in normal operation after connection is established
+            pass
         
         elif msg_type == MessageType.TEXT_MESSAGE:
             # Decrypt and deliver text message
@@ -429,13 +451,32 @@ class P2PServer:
             # Generate fingerprint
             fingerprint = crypto.generate_fingerprint(peer_public_key_bytes)
             
-            # Notify callback with established connection
+            # Receive the client's handshake message
+            # First, receive enough data to parse the header
+            header_data = self._recv_exact_from_socket(client_socket, Protocol.HEADER_SIZE)
+            
+            # Parse header to get payload length
+            version, msg_type_int, payload_length = struct.unpack('!BHI', header_data)
+            
+            # Receive the full payload
+            payload_data = self._recv_exact_from_socket(client_socket, payload_length)
+            
+            # Combine header and payload for unpacking
+            full_message = header_data + payload_data
+            
+            # Verify it's a handshake
+            msg_type, handshake_payload, _ = Protocol.unpack_message(full_message)
+            if msg_type != MessageType.HANDSHAKE:
+                raise Exception("Expected HANDSHAKE message")
+            
+            # Notify callback with established connection and handshake info
             if self.on_connection_callback:
                 self.on_connection_callback(
                     client_socket,
                     session_keys,
                     fingerprint,
-                    address
+                    address,
+                    handshake_payload
                 )
                 
         except Exception as e:
@@ -656,7 +697,7 @@ class NetworkManager:
     
     def _handle_incoming_connection(self, client_socket: socket.socket, 
                                     session_keys: Tuple, fingerprint: str, 
-                                    address: Tuple[str, int]):
+                                    address: Tuple[str, int], handshake_payload: Dict):
         """Handle incoming connection from a peer."""
         # 1. Create a P2PConnection from the accepted socket
         # 2. Completing the handshake
@@ -684,6 +725,12 @@ class NetworkManager:
             connection.on_group_message_callback = self._handle_group_message
             connection.on_state_change_callback = self._handle_state_change
 
+            # Set socket timeout for long-running connection
+            client_socket.settimeout(1.0)
+            
+            # Set state to AUTHENTICATED before starting threads
+            connection._set_state(ConnectionState.AUTHENTICATED)
+
             # Send handshake response
             handshake_response = protocol.Protocol.create_handshake_response(
                 self.my_uid,
@@ -691,7 +738,7 @@ class NetworkManager:
                 crypto.generate_fingerprint(self.identity.get_public_key_bytes()),
                 accepted=True
             )
-            connection.send_queue.put(handshake_response)
+            client_socket.sendall(handshake_response)
 
             # Start threads
             connection.receive_thread = threading.Thread(target=connection._receive_loop, daemon=True)
@@ -706,7 +753,6 @@ class NetworkManager:
 
             # Add to connections
             self.connections[contact.uid] = connection
-            connection._set_state(ConnectionState.AUTHENTICATED)
     
     def disconnect_all(self):
         """Disconnect from all peers."""
