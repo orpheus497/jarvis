@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- SyntaxError in server.py caused by duplicate `async` keywords in async context managers
+  - Fixed line 159: async with self.client_lock (stop method)
+  - Fixed line 199: async with self.client_lock (handle_client method)
+  - Fixed line 243: async with self.client_lock (handle_client cleanup)
+  - Fixed line 253: async def _process_command method definition
+- AttributeError in ui.py from non-existent ContactCardManager.export_contact_to_card method
+  - Removed dead code in _show_contact_info that attempted to export other contacts' cards
+  - Only user's own identity can be exported per design specifications
+- TypeError from improper async/sync bridging in UI workflows
+  - Fixed load_identity_worker to use await with connect_to_server_async()
+  - Fixed load_identity_worker to use await with login_async()
+  - Fixed load_identity_worker to use await with disconnect_from_server_async()
+  - Fixed _show_settings to use await with client.delete_account()
+  - Fixed _show_settings to use await with logout_async() and disconnect_from_server_async()
+  - Fixed action_quit to run async _quit_app worker with proper cleanup
+  - Fixed _connect_to_contact to use await with connect_to_peer_async()
+- Code structure issues in client_adapter.py
+  - Removed duplicate ServerManagedContactManager class definition (200 lines of redundant code)
+  - Removed duplicate ServerManagedGroupManager class definition
+  - Removed misplaced methods that were incorrectly placed after group manager
+  - File reduced from 692 lines to 492 lines with no functionality loss
+- Connection status synchronization issues
+  - Added _connection_cache dictionary to ClientAdapter for sync access
+  - Modified _handle_connection_state_event to update cache automatically
+  - Fixed is_connected() to use cached state instead of attempting async calls from sync context
+  - Connection status now properly reflects actual peer connectivity in UI
+
 ### Changed
 - Converted entire networking architecture from threading to asyncio per technical blueprint
   - **Phase 1 - P2P Network Layer (network.py):**
