@@ -57,14 +57,29 @@ class ClientAdapter:
         return self._loop
     
     def _run_async(self, coro):
-        """Run async coroutine and return result."""
-        loop = self._get_loop()
-        if loop.is_running():
-            # If loop is already running (e.g., in Textual), create task
-            return asyncio.create_task(coro)
-        else:
-            # If no loop running, run until complete
-            return loop.run_until_complete(coro)
+        """
+        Run async coroutine and return result synchronously.
+        
+        Note: This should only be called from truly synchronous contexts,
+        not from within an async event loop. If called from within a running
+        event loop, returns None.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context - this is a programming error
+            # Return None to avoid blocking
+            logger.warning("_run_async called from within running event loop - returning None")
+            # Schedule the coroutine to run but don't wait for it
+            asyncio.create_task(coro)
+            return None
+        except RuntimeError:
+            # No running loop, safe to use run_until_complete
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                asyncio.set_event_loop(None)
     
     async def connect_to_server_async(self) -> bool:
         """Connect to server (async)."""
@@ -145,22 +160,66 @@ class ClientAdapter:
         pass
     
     def send_message(self, uid: str, message: str, message_id: str, timestamp: str) -> bool:
-        """Send direct message to peer."""
-        response = self.client.send_message(uid, message)
-        return response.get('success', False)
+        """Send direct message to peer (sync wrapper - fires async task)."""
+        try:
+            loop = asyncio.get_running_loop()
+            # Create task to send message asynchronously
+            task = asyncio.create_task(self.send_message_async(uid, message, message_id, timestamp))
+            # Return True to indicate message was scheduled
+            # Actual success/failure will be in the async callback
+            return True
+        except RuntimeError:
+            # No running loop
+            response = self._run_async(self.send_message_async(uid, message, message_id, timestamp))
+            return response if isinstance(response, bool) else False
+    
+    async def send_message_async(self, uid: str, message: str, message_id: str, timestamp: str) -> bool:
+        """Send direct message to peer (async)."""
+        response = await self.client.send_message(uid, message)
+        return response.get('success', False) if isinstance(response, dict) else False
     
     def send_group_message(self, group_id: str, message: str, 
                           message_id: str, timestamp: str) -> int:
-        """Send group message."""
-        response = self.client.send_group_message(group_id, message)
-        if response.get('success'):
+        """Send group message (sync wrapper - fires async task)."""
+        try:
+            loop = asyncio.get_running_loop()
+            # Create task to send message asynchronously
+            task = asyncio.create_task(self.send_group_message_async(group_id, message, message_id, timestamp))
+            # Return 1 to indicate message was scheduled
+            # Actual count will be determined asynchronously
+            return 1
+        except RuntimeError:
+            # No running loop
+            response = self._run_async(self.send_group_message_async(group_id, message, message_id, timestamp))
+            return response if isinstance(response, int) else 0
+    
+    async def send_group_message_async(self, group_id: str, message: str, 
+                                       message_id: str, timestamp: str) -> int:
+        """Send group message (async)."""
+        response = await self.client.send_group_message(group_id, message)
+        if isinstance(response, dict) and response.get('success'):
             return response.get('sent_count', 0)
         return 0
     
     def is_connected(self, uid: str) -> bool:
-        """Check if connected to peer."""
-        response = self.client.get_connection_status(uid)
-        if response.get('success'):
+        """Check if connected to peer (sync wrapper)."""
+        try:
+            loop = asyncio.get_running_loop()
+            # For status checks, we need the actual result
+            # Schedule check and return False as default (optimistic)
+            # The actual status will be checked asynchronously
+            task = asyncio.create_task(self.is_connected_async(uid))
+            # For now, return False as we can't wait for result
+            return False
+        except RuntimeError:
+            # No running loop
+            response = self._run_async(self.is_connected_async(uid))
+            return response if isinstance(response, bool) else False
+    
+    async def is_connected_async(self, uid: str) -> bool:
+        """Check if connected to peer (async)."""
+        response = await self.client.get_connection_status(uid)
+        if isinstance(response, dict) and response.get('success'):
             return response.get('connected', False)
         return False
     

@@ -1151,7 +1151,7 @@ class JarvisApp(App):
     async def load_identity_worker(self) -> None:
         """Worker to load or create identity."""
         # Connect to server first
-        if not self.client_adapter.connect_to_server():
+        if not await self.client_adapter.connect_to_server_async():
             self.notify("Failed to connect to server", severity="error")
             self.exit()
             return
@@ -1162,7 +1162,7 @@ class JarvisApp(App):
         )
 
         if result is None:
-            self.client_adapter.disconnect_from_server()
+            await self.client_adapter.disconnect_from_server_async()
             self.exit()
             return
 
@@ -1172,9 +1172,9 @@ class JarvisApp(App):
         self.session_manager.create_session(self.identity.uid)
 
         # Login to server
-        if not self.client_adapter.login(self.password):
+        if not await self.client_adapter.login_async(self.password):
             self.notify("Failed to login to server", severity="error")
-            self.client_adapter.disconnect_from_server()
+            await self.client_adapter.disconnect_from_server_async()
             self.exit()
             return
         
@@ -1330,7 +1330,7 @@ class JarvisApp(App):
 
     async def _connect_to_contact(self, contact: Contact) -> None:
         """Connect to a contact in the background."""
-        if self.network_manager.connect_to_peer(contact):
+        if await self.network_manager.connect_to_peer_async(contact):
             self.notify(f"Connected to {contact.username}", severity="information")
         else:
             self.notify(f"Failed to connect to {contact.username}", severity="warning")
@@ -1543,12 +1543,12 @@ class JarvisApp(App):
             if delete_result:
                 # Delete account via server
                 if self.client:
-                    self.client.delete_account(self.password)
+                    await self.client.delete_account(self.password)
                 
                 # Disconnect from server
                 if self.client_adapter:
-                    self.client_adapter.logout()
-                    self.client_adapter.disconnect_from_server()
+                    await self.client_adapter.logout_async()
+                    await self.client_adapter.disconnect_from_server_async()
                 
                 self.notify("Account deleted successfully.", severity="warning")
                 self.exit()
@@ -1579,23 +1579,7 @@ class JarvisApp(App):
                                    self.message_store)
             )
             
-            if result == "export_card":
-                # Export contact card
-                try:
-                    cards_dir = os.path.join(self.data_dir, 'contact_cards')
-                    os.makedirs(cards_dir, exist_ok=True)
-                    
-                    filename = f"{self.current_contact.username}_{self.current_contact.uid[:8]}.jcard"
-                    filepath = os.path.join(cards_dir, filename)
-                    
-                    if ContactCardManager.export_contact_to_card(self.current_contact, filepath):
-                        self.notify(f"Contact card exported to: {filepath}", severity="information")
-                    else:
-                        self.notify("Failed to export contact card", severity="error")
-                except Exception as e:
-                    self.notify(f"Error exporting contact card: {str(e)}", severity="error")
-            
-            elif result == "delete":
+            if result == "delete":
                 # Confirm and delete contact
                 if self.contact_manager.remove_contact(self.current_contact.uid):
                     # Delete conversation
@@ -1656,7 +1640,12 @@ class JarvisApp(App):
 
     def action_quit(self) -> None:
         """Quit the application."""
+        self.run_worker(self._quit_app())
+    
+    async def _quit_app(self) -> None:
+        """Worker to quit the application."""
         if self.client_adapter:
-            self.client_adapter.logout()
-            self.client_adapter.disconnect_from_server()
+            await self.client_adapter.logout_async()
+            await self.client_adapter.disconnect_from_server_async()
+        self.exit()
         self.exit()
