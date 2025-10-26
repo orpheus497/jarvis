@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Converted entire networking architecture from threading to asyncio per technical blueprint
+  - P2P connections now use asyncio.open_connection() and asyncio.start_server()
+  - All threading.Thread replaced with asyncio.Task
+  - Network I/O uses asyncio StreamReader/StreamWriter
+  - Non-blocking operations throughout with async/await syntax
+  - Unified asynchronous architecture for integration with Textual UI framework
+  - IPC communication uses asyncio for client-server protocol
+  - Connection management, keepalive, and reconnection logic use asyncio.Task
+  - Comprehensive error handling and logging throughout async operations
+  - Connection health monitoring and diagnostics with detailed statistics
+  - Exponential backoff for reconnection attempts
+  - Graceful degradation for partial connection failures
+
 ## [1.2.0] - 2025-10-26
 
 ### Added
