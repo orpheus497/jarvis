@@ -1,19 +1,19 @@
 """
-Jarvis - Background server daemon for persistent connections using asyncio.
+Jarvis - Background server daemon for persistent connections.
 
 Created by orpheus497
 
 This module implements a background server that maintains P2P connections
 and provides an IPC interface for client UI processes to interact with.
-Converted to unified asyncio architecture per technical blueprint.
 """
 
 import os
 import sys
 import json
-import asyncio
+import socket
+import threading
+import time
 import signal
-import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, Callable
 from datetime import datetime
@@ -25,10 +25,6 @@ from .message import MessageStore
 from .group import GroupManager
 from .network import NetworkManager
 from .notification import get_notification_manager
-
-# Configure logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class ServerCommand:
@@ -75,7 +71,7 @@ class ServerCommand:
 
 
 class JarvisServer:
-    """Background server that maintains P2P connections using asyncio."""
+    """Background server that maintains P2P connections."""
     
     def __init__(self, data_dir: str, ipc_port: int = 5999):
         """
@@ -101,12 +97,13 @@ class JarvisServer:
         self.identity = None
         self.password = None
         
-        # IPC server
-        self.ipc_server: Optional[asyncio.Server] = None
+        # IPC socket
+        self.ipc_socket: Optional[socket.socket] = None
+        self.ipc_thread: Optional[threading.Thread] = None
         
         # Client connections
-        self.clients: Dict[int, asyncio.StreamWriter] = {}
-        self.client_lock = asyncio.Lock()
+        self.clients: Dict[int, socket.socket] = {}
+        self.client_lock = threading.Lock()
         self.next_client_id = 1
         
         # PID file
@@ -115,12 +112,12 @@ class JarvisServer:
         # Event handlers for broadcasts
         self.message_callbacks = []
         
-    async def start(self) -> bool:
+    def start(self) -> bool:
         """Start the server."""
         try:
             # Check if server is already running
             if self._is_server_running():
-                logger.error(f"Server already running (PID file exists: {self.pid_file})")
+                print(f"Server already running (PID file exists: {self.pid_file})")
                 return False
             
             # Create PID file
@@ -130,83 +127,106 @@ class JarvisServer:
             signal.signal(signal.SIGINT, self._signal_handler)
             signal.signal(signal.SIGTERM, self._signal_handler)
             
-            # Start IPC server using asyncio
-            self.ipc_server = await asyncio.start_server(
-                self._handle_client,
-                '127.0.0.1',
-                self.ipc_port
-            )
+            # Start IPC server
+            self.ipc_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.ipc_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.ipc_socket.bind(('127.0.0.1', self.ipc_port))
+            self.ipc_socket.listen(5)
             
             self.running = True
             
-            logger.info(f"Jarvis server started on port {self.ipc_port}")
-            logger.info(f"PID: {os.getpid()}")
-            logger.info(f"Data directory: {self.data_dir}")
+            # Start IPC listener thread
+            self.ipc_thread = threading.Thread(target=self._ipc_listener, daemon=True)
+            self.ipc_thread.start()
+            
+            print(f"Jarvis server started on port {self.ipc_port}")
+            print(f"PID: {os.getpid()}")
+            print(f"Data directory: {self.data_dir}")
             
             return True
             
         except Exception as e:
-            logger.error(f"Failed to start server: {e}", exc_info=True)
+            print(f"Failed to start server: {e}")
             self._cleanup()
             return False
     
-    async def stop(self):
+    def stop(self):
         """Stop the server."""
-        logger.info("Stopping server...")
+        print("Stopping server...")
         self.running = False
         
         # Disconnect all clients
-        async async with self.client_lock:
-            for writer in self.clients.values():
+        with self.client_lock:
+            for client_socket in self.clients.values():
                 try:
-                    writer.close()
-                    await writer.wait_closed()
-                except Exception as e:
-                    logger.debug(f"Error closing client: {e}")
+                    client_socket.close()
+                except:
+                    pass
             self.clients.clear()
         
         # Stop network manager
         if self.network_manager:
-            await self.network_manager.disconnect_all()
-            await self.network_manager.stop_server()
+            self.network_manager.disconnect_all()
+            self.network_manager.stop_server()
         
-        # Close IPC server
-        if self.ipc_server:
-            self.ipc_server.close()
-            await self.ipc_server.wait_closed()
+        # Close IPC socket
+        if self.ipc_socket:
+            try:
+                self.ipc_socket.close()
+            except:
+                pass
         
         # Cleanup
         self._cleanup()
         
-        logger.info("Server stopped")
+        print("Server stopped")
     
-    async def run(self):
+    def run(self):
         """Run server main loop."""
         try:
             while self.running:
-                await asyncio.sleep(1)
+                time.sleep(1)
         except KeyboardInterrupt:
             pass
         finally:
-            await self.stop()
+            self.stop()
     
-    async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    def _ipc_listener(self):
+        """Listen for IPC client connections."""
+        self.ipc_socket.settimeout(1.0)
+        
+        while self.running:
+            try:
+                client_socket, address = self.ipc_socket.accept()
+                
+                # Assign client ID
+                with self.client_lock:
+                    client_id = self.next_client_id
+                    self.next_client_id += 1
+                    self.clients[client_id] = client_socket
+                
+                # Handle client in separate thread
+                threading.Thread(
+                    target=self._handle_client,
+                    args=(client_id, client_socket),
+                    daemon=True
+                ).start()
+                
+            except socket.timeout:
+                continue
+            except Exception as e:
+                if self.running:
+                    print(f"Error accepting client: {e}")
+    
+    def _handle_client(self, client_id: int, client_socket: socket.socket):
         """Handle client connection."""
-        address = writer.get_extra_info('peername')
-        logger.debug(f"Client connected from {address}")
-        
-        # Assign client ID
-        async async with self.client_lock:
-            client_id = self.next_client_id
-            self.next_client_id += 1
-            self.clients[client_id] = writer
-        
+        client_socket.settimeout(60.0)
         buffer = b''
         
         try:
             while self.running:
                 try:
-                    data = await asyncio.wait_for(reader.read(4096), timeout=60.0)
+                    data = client_socket.recv(4096)
                     if not data:
                         break
                     
@@ -218,39 +238,36 @@ class JarvisServer:
                         if line:
                             try:
                                 request = json.loads(line.decode('utf-8'))
-                                response = await self._process_command(request)
+                                response = self._process_command(request)
                                 
                                 # Send response
                                 response_data = json.dumps(response) + '\n'
-                                writer.write(response_data.encode('utf-8'))
-                                await writer.drain()
-                            except json.JSONDecodeError as e:
-                                logger.warning(f"Invalid JSON from client: {e}")
+                                client_socket.sendall(response_data.encode('utf-8'))
+                            except json.JSONDecodeError:
                                 error_response = {
                                     'success': False,
                                     'error': 'Invalid JSON'
                                 }
-                                writer.write((json.dumps(error_response) + '\n').encode('utf-8'))
-                                await writer.drain()
+                                client_socket.sendall(
+                                    (json.dumps(error_response) + '\n').encode('utf-8')
+                                )
                 
-                except asyncio.TimeoutError:
+                except socket.timeout:
                     continue
                 except Exception as e:
-                    logger.error(f"Error handling client {client_id}: {e}", exc_info=True)
                     break
         finally:
             # Remove client
-            async async with self.client_lock:
+            with self.client_lock:
                 if client_id in self.clients:
                     del self.clients[client_id]
             
             try:
-                writer.close()
-                await writer.wait_closed()
-            except Exception as e:
-                logger.debug(f"Error closing writer: {e}")
+                client_socket.close()
+            except:
+                pass
     
-    async async def _process_command(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    def _process_command(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Process client command and return response."""
         command = request.get('command')
         params = request.get('params', {})
@@ -260,79 +277,79 @@ class JarvisServer:
                 return {'success': True, 'message': 'pong'}
             
             elif command == ServerCommand.LOGIN:
-                return await self._handle_login(params)
+                return self._handle_login(params)
             
             elif command == ServerCommand.LOGOUT:
-                return await self._handle_logout()
+                return self._handle_logout()
             
             elif command == ServerCommand.SEND_MESSAGE:
-                return await self._handle_send_message(params)
+                return self._handle_send_message(params)
             
             elif command == ServerCommand.SEND_GROUP_MESSAGE:
-                return await self._handle_send_group_message(params)
+                return self._handle_send_group_message(params)
             
             elif command == ServerCommand.GET_MESSAGES:
-                return await self._handle_get_messages(params)
+                return self._handle_get_messages(params)
             
             elif command == ServerCommand.GET_GROUP_MESSAGES:
-                return await self._handle_get_group_messages(params)
+                return self._handle_get_group_messages(params)
             
             elif command == ServerCommand.MARK_MESSAGES_READ:
-                return await self._handle_mark_messages_read(params)
+                return self._handle_mark_messages_read(params)
             
             elif command == ServerCommand.MARK_GROUP_MESSAGES_READ:
-                return await self._handle_mark_group_messages_read(params)
+                return self._handle_mark_group_messages_read(params)
             
             elif command == ServerCommand.GET_UNREAD_COUNT:
-                return await self._handle_get_unread_count(params)
+                return self._handle_get_unread_count(params)
             
             elif command == ServerCommand.GET_GROUP_UNREAD_COUNT:
-                return await self._handle_get_group_unread_count(params)
+                return self._handle_get_group_unread_count(params)
             
             elif command == ServerCommand.GET_TOTAL_UNREAD_COUNT:
-                return await self._handle_get_total_unread_count()
+                return self._handle_get_total_unread_count()
             
             elif command == ServerCommand.ADD_CONTACT:
-                return await self._handle_add_contact(params)
+                return self._handle_add_contact(params)
             
             elif command == ServerCommand.REMOVE_CONTACT:
-                return await self._handle_remove_contact(params)
+                return self._handle_remove_contact(params)
             
             elif command == ServerCommand.GET_CONTACTS:
-                return await self._handle_get_contacts()
+                return self._handle_get_contacts()
             
             elif command == ServerCommand.GET_CONTACT:
-                return await self._handle_get_contact(params)
+                return self._handle_get_contact(params)
             
             elif command == ServerCommand.CREATE_GROUP:
-                return await self._handle_create_group(params)
+                return self._handle_create_group(params)
             
             elif command == ServerCommand.DELETE_GROUP:
-                return await self._handle_delete_group(params)
+                return self._handle_delete_group(params)
             
             elif command == ServerCommand.GET_GROUPS:
-                return await self._handle_get_groups()
+                return self._handle_get_groups()
             
             elif command == ServerCommand.GET_GROUP:
-                return await self._handle_get_group(params)
+                return self._handle_get_group(params)
             
             elif command == ServerCommand.GET_IDENTITY:
-                return await self._handle_get_identity()
+                return self._handle_get_identity()
             
             elif command == ServerCommand.DELETE_ACCOUNT:
-                return await self._handle_delete_account(params)
+                return self._handle_delete_account(params)
             
             elif command == ServerCommand.EXPORT_ACCOUNT:
-                return await self._handle_export_account(params)
+                return self._handle_export_account(params)
             
             elif command == ServerCommand.GET_CONNECTION_STATUS:
-                return await self._handle_get_connection_status(params)
+                return self._handle_get_connection_status(params)
             
             elif command == ServerCommand.CONNECT_TO_PEER:
-                return await self._handle_connect_to_peer(params)
+                return self._handle_connect_to_peer(params)
             
             elif command == ServerCommand.SHUTDOWN:
-                return await self._handle_shutdown()
+                return self._handle_shutdown()
             
             else:
                 return {
@@ -346,7 +363,7 @@ class JarvisServer:
                 'error': str(e)
             }
     
-    async def _handle_login(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_login(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle login command."""
         password = params.get('password')
         
@@ -393,11 +410,11 @@ class JarvisServer:
             self.network_manager.on_connection_state_callback = self._handle_connection_state_change
             
             # Start network server
-            if not await self.network_manager.start_server():
+            if not self.network_manager.start_server():
                 return {'success': False, 'error': 'Failed to start network server'}
             
             # Connect to all contacts
-            await self.network_manager.connect_all_contacts()
+            self.network_manager.connect_all_contacts()
             
             # Setup group memberships
             for group in self.group_manager.get_all_groups():
@@ -417,7 +434,7 @@ class JarvisServer:
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
-    async def _handle_logout(self) -> Dict[str, Any]:
+    def _handle_logout(self) -> Dict[str, Any]:
         """Handle logout command."""
         try:
             if self.network_manager:
@@ -436,7 +453,7 @@ class JarvisServer:
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
-    async def _handle_send_message(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_send_message(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle send message command."""
         if not self.network_manager:
             return {'success': False, 'error': 'Not logged in'}
@@ -452,7 +469,7 @@ class JarvisServer:
         timestamp = datetime.now().isoformat()
         
         # Send via network
-        success = await self.network_manager.send_message(uid, message, message_id, timestamp)
+        success = self.network_manager.send_message(uid, message, message_id, timestamp)
         
         if success:
             # Store message
@@ -465,7 +482,7 @@ class JarvisServer:
             'message_id': message_id if success else None
         }
     
-    async def _handle_send_group_message(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_send_group_message(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle send group message command."""
         if not self.network_manager:
             return {'success': False, 'error': 'Not logged in'}
@@ -481,7 +498,7 @@ class JarvisServer:
         timestamp = datetime.now().isoformat()
         
         # Send via network
-        sent_count = await self.network_manager.send_group_message(
+        sent_count = self.network_manager.send_group_message(
             group_id, message, message_id, timestamp
         )
         
@@ -496,7 +513,7 @@ class JarvisServer:
             'message_id': message_id
         }
     
-    async def _handle_get_messages(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_get_messages(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle get messages command."""
         if not self.message_store:
             return {'success': False, 'error': 'Not logged in'}
@@ -521,7 +538,7 @@ class JarvisServer:
             ]
         }
     
-    async def _handle_get_group_messages(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_get_group_messages(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle get group messages command."""
         if not self.message_store:
             return {'success': False, 'error': 'Not logged in'}
@@ -546,7 +563,7 @@ class JarvisServer:
             ]
         }
     
-    async def _handle_mark_messages_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_mark_messages_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle mark messages as read command."""
         if not self.message_store:
             return {'success': False, 'error': 'Not logged in'}
@@ -559,7 +576,7 @@ class JarvisServer:
         
         return {'success': True}
     
-    async def _handle_mark_group_messages_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_mark_group_messages_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle mark group messages as read command."""
         if not self.message_store:
             return {'success': False, 'error': 'Not logged in'}
@@ -572,7 +589,7 @@ class JarvisServer:
         
         return {'success': True}
     
-    async def _handle_get_unread_count(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_get_unread_count(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle get unread count command."""
         if not self.message_store:
             return {'success': False, 'error': 'Not logged in'}
@@ -588,7 +605,7 @@ class JarvisServer:
             'count': count
         }
     
-    async def _handle_get_unread_count(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_get_group_unread_count(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle get group unread count command."""
         if not self.message_store:
             return {'success': False, 'error': 'Not logged in'}
@@ -604,7 +621,7 @@ class JarvisServer:
             'count': count
         }
     
-    async def _handle_get_total_unread_count(self) -> Dict[str, Any]:
+    def _handle_get_total_unread_count(self) -> Dict[str, Any]:
         """Handle get total unread count command."""
         if not self.message_store:
             return {'success': False, 'error': 'Not logged in'}
@@ -616,7 +633,7 @@ class JarvisServer:
             'count': count
         }
     
-    async def _handle_add_contact(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_add_contact(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle add contact command."""
         if not self.contact_manager:
             return {'success': False, 'error': 'Not logged in'}
@@ -638,14 +655,14 @@ class JarvisServer:
             
             # Try to connect
             if self.network_manager:
-                await self.network_manager.connect_to_peer(contact)
+                self.network_manager.connect_to_peer(contact)
             
             return {'success': True}
         
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
-    async def _handle_remove_contact(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_remove_contact(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle remove contact command."""
         if not self.contact_manager:
             return {'success': False, 'error': 'Not logged in'}
@@ -661,7 +678,7 @@ class JarvisServer:
         
         return {'success': success}
     
-    async def _handle_get_contacts(self) -> Dict[str, Any]:
+    def _handle_get_contacts(self) -> Dict[str, Any]:
         """Handle get contacts command."""
         if not self.contact_manager:
             return {'success': False, 'error': 'Not logged in'}
@@ -684,7 +701,7 @@ class JarvisServer:
             ]
         }
     
-    async def _handle_get_contact(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_get_contact(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle get contact command."""
         if not self.contact_manager:
             return {'success': False, 'error': 'Not logged in'}
@@ -710,7 +727,7 @@ class JarvisServer:
             }
         }
     
-    async def _handle_create_group(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_create_group(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle create group command."""
         if not self.group_manager:
             return {'success': False, 'error': 'Not logged in'}
@@ -748,7 +765,7 @@ class JarvisServer:
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
-    async def _handle_delete_group(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_delete_group(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle delete group command."""
         if not self.group_manager:
             return {'success': False, 'error': 'Not logged in'}
@@ -761,7 +778,7 @@ class JarvisServer:
         
         return {'success': success}
     
-    async def _handle_get_groups(self) -> Dict[str, Any]:
+    def _handle_get_groups(self) -> Dict[str, Any]:
         """Handle get groups command."""
         if not self.group_manager:
             return {'success': False, 'error': 'Not logged in'}
@@ -789,7 +806,7 @@ class JarvisServer:
             ]
         }
     
-    async def _handle_get_group(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_get_group(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle get group command."""
         if not self.group_manager:
             return {'success': False, 'error': 'Not logged in'}
@@ -820,7 +837,7 @@ class JarvisServer:
             }
         }
     
-    async def _handle_get_identity(self) -> Dict[str, Any]:
+    def _handle_get_identity(self) -> Dict[str, Any]:
         """Handle get identity command."""
         if not self.identity:
             return {'success': False, 'error': 'Not logged in'}
@@ -835,7 +852,7 @@ class JarvisServer:
             }
         }
     
-    async def _handle_delete_account(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_delete_account(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle delete account command."""
         if not self.identity_manager:
             return {'success': False, 'error': 'Not logged in'}
@@ -865,7 +882,7 @@ class JarvisServer:
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
-    async def _handle_export_account(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_export_account(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle export account command."""
         if not self.identity_manager:
             return {'success': False, 'error': 'Not logged in'}
@@ -883,7 +900,7 @@ class JarvisServer:
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
-    async def _handle_get_connection_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_get_connection_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle get connection status command."""
         if not self.network_manager:
             return {'success': False, 'error': 'Not logged in'}
@@ -909,7 +926,7 @@ class JarvisServer:
                 'statuses': statuses
             }
     
-    async def _handle_connect_to_peer(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_connect_to_peer(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle connect to peer command."""
         if not self.network_manager or not self.contact_manager:
             return {'success': False, 'error': 'Not logged in'}
@@ -922,22 +939,22 @@ class JarvisServer:
         if not contact:
             return {'success': False, 'error': 'Contact not found'}
         
-        success = await self.network_manager.connect_to_peer(contact)
+        success = self.network_manager.connect_to_peer(contact)
         
         return {'success': success}
     
-    async def _handle_shutdown(self) -> Dict[str, Any]:
+    def _handle_shutdown(self) -> Dict[str, Any]:
         """Handle shutdown command."""
         # Schedule shutdown
-        asyncio.create_task(self._delayed_shutdown())
+        threading.Thread(target=self._delayed_shutdown, daemon=True).start()
         return {'success': True, 'message': 'Server shutting down'}
     
-    async def _delayed_shutdown(self):
+    def _delayed_shutdown(self):
         """Shutdown after a short delay to allow response to be sent."""
-        await asyncio.sleep(0.5)
+        time.sleep(0.5)
         self.running = False
     
-    async def _handle_incoming_message(self, sender_uid: str, message: str, 
+    def _handle_incoming_message(self, sender_uid: str, message: str, 
                                  message_id: str, timestamp: str):
         """Handle incoming message from network."""
         if self.message_store and self.identity:
@@ -955,7 +972,7 @@ class JarvisServer:
             )
         
         # Broadcast to clients (for real-time updates)
-        await self._broadcast_to_clients({
+        self._broadcast_to_clients({
             'event': 'message_received',
             'sender_uid': sender_uid,
             'message': message,
@@ -963,7 +980,7 @@ class JarvisServer:
             'timestamp': timestamp
         })
     
-    async def _handle_incoming_group_message(self, group_id: str, sender_uid: str,
+    def _handle_incoming_group_message(self, group_id: str, sender_uid: str,
                                        message: str, message_id: str, timestamp: str):
         """Handle incoming group message from network."""
         if self.message_store:
@@ -983,7 +1000,7 @@ class JarvisServer:
             )
         
         # Broadcast to clients
-        await self._broadcast_to_clients({
+        self._broadcast_to_clients({
             'event': 'group_message_received',
             'group_id': group_id,
             'sender_uid': sender_uid,
@@ -992,27 +1009,26 @@ class JarvisServer:
             'timestamp': timestamp
         })
     
-    async def _handle_connection_state_change(self, uid: str, state: int):
+    def _handle_connection_state_change(self, uid: str, state: int):
         """Handle connection state change."""
         # Broadcast to clients
-        await self._broadcast_to_clients({
+        self._broadcast_to_clients({
             'event': 'connection_state_changed',
             'uid': uid,
             'state': state
         })
     
-    async def _broadcast_to_clients(self, event: Dict[str, Any]):
+    def _broadcast_to_clients(self, event: Dict[str, Any]):
         """Broadcast event to all connected clients."""
         message = json.dumps({'type': 'event', 'data': event}) + '\n'
         message_bytes = message.encode('utf-8')
         
-        async with self.client_lock:
-            for writer in list(self.clients.values()):
+        with self.client_lock:
+            for client_socket in list(self.clients.values()):
                 try:
-                    writer.write(message_bytes)
-                    await writer.drain()
-                except Exception as e:
-                    logger.debug(f"Error broadcasting to client: {e}")
+                    client_socket.sendall(message_bytes)
+                except:
+                    pass
     
     def _is_server_running(self) -> bool:
         """Check if server is already running."""
@@ -1055,12 +1071,12 @@ class JarvisServer:
         self.running = False
 
 
-async def async_main():
-    """Async main entry point for server daemon."""
+def main():
+    """Main entry point for server daemon."""
     import argparse
     
     parser = argparse.ArgumentParser(
-        description='Jarvis Server - Background daemon for P2P connections (asyncio)'
+        description='Jarvis Server - Background daemon for P2P connections'
     )
     
     parser.add_argument(
@@ -1099,16 +1115,11 @@ async def async_main():
     # Create and start server
     server = JarvisServer(str(data_dir), args.ipc_port)
     
-    if not await server.start():
+    if not server.start():
         sys.exit(1)
     
     # Run server
-    await server.run()
-
-
-def main():
-    """Main entry point - runs async_main."""
-    asyncio.run(async_main())
+    server.run()
 
 
 if __name__ == '__main__':
