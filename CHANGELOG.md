@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- Backup files from threading-to-asyncio refactoring cleanup
+  - client_adapter_old.py (285 lines)
+  - client_old_threading.py (564 lines)
+  - network_old_threading.py (850 lines)
+  - server_old_threading.py (1,126 lines)
+  - Total cleanup: 2,825 lines of obsolete threading code
+  - Refactoring to asyncio architecture fully complete
+
 ### Fixed
 - Missing pyperclip dependency in setup.py install_requires
   - Added pyperclip>=1.8.2 to ensure clipboard functionality works correctly
