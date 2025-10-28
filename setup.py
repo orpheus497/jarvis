@@ -50,6 +50,7 @@ setup(
         'cryptography>=42.0.4',
         'argon2-cffi>=23.1.0',
         'rich>=13.7.0',
+        'pyperclip>=1.8.2',
     ],
     entry_points={
         'console_scripts': [

@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Missing pyperclip dependency in setup.py install_requires
+  - Added pyperclip>=1.8.2 to ensure clipboard functionality works correctly
+  - Aligns setup.py with requirements.txt and actual code usage
+- Documentation compliance issues per project requirements
+  - Removed prohibited subjective language from CHANGELOG (words: better, improved)
+  - Updated README.md requirements section to include pyperclip with version and license
+
+### Fixed
 - SyntaxError in server.py caused by duplicate `async` keywords in async context managers
   - Fixed line 159: async with self.client_lock (stop method)
   - Fixed line 199: async with self.client_lock (handle_client method)
@@ -162,7 +170,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Cycles through color scheme: white, red, bright_white, dark red, purple, grey
 - Connection notifications
   - Notifies user when contacts connect/disconnect
-  - Shows connection attempts for new contacts
+  - Shows connection attempts for added contacts
   - Reports connection success/failure with counts
 - User guidance throughout application
   - Welcome screen explains password recovery warning
@@ -194,12 +202,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Connection state changes now update UI status display
   - Real-time feedback on peer connectivity
   - Automatic UI refresh on connection events
-- Message sending provides better feedback
+- Message sending provides feedback on delivery status
   - Shows reason for failure (not connected, no members online)
   - Reports number of recipients for group messages
 - Contact addition now triggers automatic connection attempt
-  - New contacts are immediately available for messaging
-  - Connection status updates reflect new contact
+  - Added contacts are immediately available for messaging
+  - Connection status updates reflect added contact
 - LoadIdentityScreen provides comprehensive guidance
   - Password recovery warning prominently displayed
   - Port configuration explained with examples
@@ -248,7 +256,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed connection state initialization for incoming connections
   - Ensured receive/send threads start only after connection is fully authenticated
   - Added proper socket timeout handling for persistent connections
-  - Improved synchronization between connection endpoints
+  - Synchronization between connection endpoints corrected
 
 ### Security
 - Updated cryptography library from 41.0.7 to 42.0.4
@@ -355,7 +363,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed connection state initialization for incoming connections
   - Ensured receive/send threads start only after connection is fully authenticated
   - Added proper socket timeout handling for persistent connections
-  - Improved synchronization between connection endpoints
+  - Synchronization between connection endpoints corrected
 
 ### Security
 - Lock feature maintains encryption and connection security

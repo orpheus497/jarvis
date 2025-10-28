@@ -156,6 +156,7 @@ python -m jarvis
 - cryptography >= 42.0.4 (Apache 2.0/BSD License) - with security fixes
 - argon2-cffi >= 23.1.0 (MIT License)
 - rich >= 13.7.0 (MIT License)
+- pyperclip >= 1.8.2 (BSD 3-Clause License)
 
 All dependencies are installed automatically by the setup scripts.
 
