@@ -14,8 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation compliance issues per project requirements
   - Removed prohibited subjective language from CHANGELOG (words: better, improved)
   - Updated README.md requirements section to include pyperclip with version and license
-
-### Fixed
 - SyntaxError in server.py caused by duplicate `async` keywords in async context managers
   - Fixed line 159: async with self.client_lock (stop method)
   - Fixed line 199: async with self.client_lock (handle_client method)
