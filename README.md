@@ -1,16 +1,15 @@
 # Jarvis 🛡️
 
-**Version 1.2.0** - _A terminal-based peer-to-peer end-to-end encrypted messenger._
+**Version 2.1.0** - _Terminal-based peer-to-peer end-to-end encrypted messenger with internet connectivity_
 
 Created by **orpheus497**.
 
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Version](https://img.shields.io/badge/version-1.2.0-blue)
+![Version](https://img.shields.io/badge/version-2.1.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Termux-lightgrey)
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)
 
-Jarvis is a cross-platform terminal-based messenger that provides complete privacy through peer-to-peer direct connections. Your messages never pass through any server, are never stored in the cloud, and are protected by five layers of military-grade encryption.
+Jarvis is a cross-platform terminal-based messenger that provides complete privacy through peer-to-peer direct connections with automatic NAT traversal for internet messaging. Your messages never pass through any server, are never stored in the cloud, and are protected by five layers of military-grade encryption.
 
 ```
 ░        ░░░      ░░░       ░░░  ░░░░  ░░        ░░░      ░░
@@ -19,6 +18,8 @@ Jarvis is a cross-platform terminal-based messenger that provides complete priva
 █  ████  ██        ██  ███  █████    ███████  ███████████  █
 ██      ███  ████  ██  ████  █████  █████        ███      ██
 ```
+
+Jarvis provides complete privacy through end-to-end encryption with forward secrecy, direct peer-to-peer connections with automatic NAT traversal, offline message queuing, peer discovery, and rich communication features including file transfer, voice messages, and group chat.
 
 ---
 
@@ -29,14 +30,40 @@ Your conversations remain completely under your control.
 *   **No Cloud:** Messages are transmitted directly between peers, never stored on servers.
 *   **No Tracking:** No analytics, no tracking pixels, no telemetry of any kind.
 *   **Total Privacy:** Only you and your contacts can read your messages.
-*   **No Servers:** Direct peer-to-peer connections using TCP sockets.
+*   **No Servers Required:** Direct peer-to-peer connections using TCP sockets.
+*   **Internet Ready:** Automatic NAT traversal with UPnP/STUN for connections over the internet.
 *   **Supreme Encryption:** Five-layer encryption alternating AES-256-GCM and ChaCha20-Poly1305.
 
 ---
 
 ## Features
 
-### Security
+### 🌐 Internet Connectivity
+
+*   **Automatic NAT Traversal:** Connect over the internet without manual port forwarding
+    *   UPnP IGD automatic port mapping
+    *   STUN protocol for public IP discovery  
+    *   NAT type detection (7 types supported)
+    *   Connection strategy selection based on network topology
+*   **Peer Discovery:** Find contacts automatically on local networks
+    *   mDNS/DNS-SD service broadcasting
+    *   Real-time peer detection
+    *   Automatic address updates
+*   **Message Queue:** Reliable offline message delivery
+    *   Messages queued when recipients offline
+    *   Exponential backoff retry logic
+    *   7-day message retention
+    *   Delivery receipt tracking
+*   **Connection Reliability:** Robust connection management
+    *   Formal finite state machine
+    *   Automatic reconnection handling
+    *   Connection health monitoring
+*   **Security Hardening:** Protection for internet exposure
+    *   IP whitelisting/blacklisting
+    *   Connection limits per IP
+    *   Rate limiting
+
+### 🔐 Security
 
 *   **Five-Layer Encryption:** Messages are encrypted through five independent layers
     *   Layer 1: AES-256-GCM (first encryption)
@@ -44,17 +71,33 @@ Your conversations remain completely under your control.
     *   Layer 3: AES-256-GCM (third encryption)
     *   Layer 4: ChaCha20-Poly1305 (fourth encryption)
     *   Layer 5: AES-256-GCM (fifth encryption)
+*   **Forward Secrecy:** Double Ratchet algorithm for automatic key rotation
+    *   Signal Protocol-style implementation
+    *   Per-message key rotation
+    *   Past messages cannot be decrypted if keys compromised
+    *   Protection against retroactive surveillance
 *   **Key Exchange:** X25519 Elliptic Curve Diffie-Hellman for session key establishment
 *   **Key Derivation:** Argon2id with 3 iterations, 64 MB memory, 1 thread
 *   **Identity Protection:** Master password never stored on disk, exists only in memory
 *   **Fingerprint Verification:** SHA-256 fingerprints for contact authentication
 *   **Unique UIDs:** 128-bit cryptographically secure unique identifiers
+*   **Rate Limiting:** Token bucket algorithm prevents abuse and DoS attacks
+*   **Message Size Limits:** Configurable limits prevent memory exhaustion
 
 ### Communication
 
 *   **Direct P2P Connections:** No intermediary servers, messages go directly peer-to-peer
+*   **Encrypted File Transfer:** Send files up to 100MB with automatic chunking
+    *   1MB chunks with individual encryption
+    *   Progress tracking and resume capability
+    *   SHA-256 integrity verification
+    *   Automatic retry on failure
+*   **Voice Messages:** Record and send encrypted audio messages (optional feature)
 *   **Group Chats:** Create encrypted group conversations with multiple participants
-*   **Cross-Platform:** Works on Linux, Windows, macOS, and Termux (Android)
+*   **Message Reactions:** React to messages with emojis in real-time
+*   **Rich Text:** Markdown formatting support (bold, italic, code blocks)
+*   **Typing Indicators:** Real-time typing status for active conversations
+*   **Cross-Platform:** Works on Linux, Windows, and macOS
 *   **Background Operation:** Runs in background with system notifications
 *   **Automatic Reconnection:** Handles network interruptions gracefully
 *   **Automatic Connection:** Connects to all contacts, groups, and sessions automatically on login
@@ -63,14 +106,19 @@ Your conversations remain completely under your control.
     *   **Amber:** Partial connections (some peers online, messages can be sent/received)
     *   **Red:** No active connections (server running but no peers connected)
     *   **Grey:** Server offline (cannot send or receive messages)
-*   **Message History:** Encrypted local storage of conversation history
+*   **Message History:** Encrypted local storage with full-text search (SQLite + FTS5)
 
 ### Interface
 
 *   **Terminal UI:** Beautiful terminal interface using Textual framework
 *   **Colorful Display:** Rich colors and formatting for easy reading
-*   **Animated ASCII Banner:** An animated ASCII art banner that cycles through a gradient of colors.
+*   **Animated ASCII Banner:** An animated ASCII art banner that cycles through a gradient of colors
+*   **Full-Text Search:** Instant search across all messages with filtering (Ctrl+F)
+*   **Statistics Dashboard:** View message counts, transfer stats, and activity (Ctrl+T)
+*   **File Transfer Progress:** Real-time progress bars and transfer statistics
+*   **Connection Quality:** Visual indicators for latency and throughput
 *   **Contact Management:** Add, verify, and manage contacts
+*   **QR Code Sharing:** Generate QR codes for easy contact exchange
 *   **Status Indicators:** Real-time online/offline status
 *   **Unread Badges:** Visual indicators for unread messages
 *   **Keyboard Shortcuts:** Efficient keyboard-driven interface
@@ -78,6 +126,9 @@ Your conversations remain completely under your control.
 
 ### Privacy & Data Control
 
+*   **Configuration System:** TOML-based configuration with environment variable overrides
+*   **Automatic Backups:** Scheduled encrypted backups with rotation policy
+*   **Backup Restore:** One-command restoration from encrypted backups
 *   **Account Deletion:** Complete account and data deletion with password confirmation
 *   **Account Export:** Export complete account including identity, contacts, messages, and groups
 *   **Data Management:** Delete individual contacts, messages, or groups
@@ -94,95 +145,23 @@ The application features a terminal-based UI with real-time connection status, m
 
 ## Installation
 
-### Quick Install
+**Requirements:** Python 3.8 or higher
 
-**Linux/macOS:**
 ```bash
-chmod +x install.sh
-./install.sh
-```
-
-**Windows:**
-```cmd
-install.bat
-```
-
-**Termux (Android):**
-```bash
-pkg install python git
+# Install from source
 git clone https://github.com/orpheus497/jarvis.git
 cd jarvis
-chmod +x install.sh
-./install.sh
-pkg install termux-api  # For notifications
-```
-
-These scripts set up a local Python virtual environment and install all necessary dependencies. After installation, run Jarvis using the generated launcher script:
-
-**Linux/macOS:**
-```bash
-./run_jarvis.sh
-```
-
-**Windows:**
-```cmd
-run_jarvis.bat
-```
-
-### Build From Source
-
-```bash
-# Clone repository
-git clone https://github.com/orpheus497/jarvis.git
-cd jarvis
-
-# Automated build (sets up local venv and installs dependencies)
-chmod +x build.sh
-./build.sh
-
-# Manual build (if you prefer to manage the venv yourself)
-python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
 pip install .
 
 # Run
-python -m jarvis
+jarvis
 ```
 
-**Requirements:** 
-- Python 3.8 or higher
-- textual >= 0.47.0 (MIT License)
-- cryptography >= 42.0.4 (Apache 2.0/BSD License) - with security fixes
-- argon2-cffi >= 23.1.0 (MIT License)
-- rich >= 13.7.0 (MIT License)
+All dependencies are installed automatically.
 
-All dependencies are installed automatically by the setup scripts.
-
----
-
-## Uninstallation
-
-To remove the local Jarvis environment (virtual environment and launcher scripts):
-
-**Linux/macOS:** ./uninstall.sh  
-**Windows:** uninstall.bat  
-
-*Note: Your identity and message data are NOT deleted for safety. They remain in your data directory.*
-
-**Data Locations:**
+**Data Storage:**
 - **Linux/macOS:** `~/.jarvis/`
 - **Windows:** `%APPDATA%\Jarvis\`
-- **Termux:** `~/.jarvis/`
-
-To completely remove all data:
-```bash
-# Linux/macOS/Termux
-rm -rf ~/.jarvis
-
-# Windows
-rmdir /s /q "%APPDATA%\Jarvis"
-```
 
 ---
 
@@ -513,12 +492,7 @@ For testing or local network use, you can use local IP addresses (192.168.x.x or
 - Notifications via AppleScript
 - Native system sounds
 
-### Termux (Android)
 
-- Install `termux-api` for notifications: `pkg install termux-api`
-- Can run in background with notifications
-- Lower power usage than GUI apps
-- Access via terminal on Android
 
 ---
 
@@ -618,8 +592,7 @@ Files:
 ### Notifications Not Working
 
 **Linux:** Install libnotify: `sudo apt install libnotify-bin`  
-**Termux:** Install termux-api: `pkg install termux-api`  
-**Windows/macOS:** Notifications should work by default
+Notifications should work by default on all platforms
 
 ### High CPU Usage
 
@@ -640,49 +613,9 @@ Files:
 taskkill /PID <PID> /F
   ```
 
----
+## Configuration
 
-## Development
-
-### Setting Up Development Environment
-
-```bash
-git clone https://github.com/orpheus497/jarvis.git
-cd jarvis
-./build.sh  # Sets up dev environment
-source venv/bin/activate
-```
-
-### Running Tests
-
-```bash
-pytest tests/
-```
-
-### Code Structure
-
-```
-jarvis/
-├── src/jarvis/
-│   ├── __init__.py       # Package metadata
-│   ├── __main__.py       # Entry point
-│   ├── main.py           # Application launcher
-│   ├── server.py         # Background server daemon
-│   ├── client.py         # Client API for IPC
-│   ├── client_adapter.py # Adapter for UI compatibility
-│   ├── crypto.py         # Five-layer encryption
-│   ├── network.py        # P2P networking
-│   ├── protocol.py       # Wire protocol
-│   ├── contact.py        # Contact management
-│   ├── message.py        # Message storage
-│   ├── identity.py       # Identity management
-│   ├── group.py          # Group chat
-│   ├── session.py        # Session management
-│   ├── notification.py   # Cross-platform notifications
-│   ├── ui.py             # Textual UI (client)
-│   └── utils.py          # Utility functions
-└── tests/                # Test suite
-```
+Create a `config.toml` file in your data directory (`~/.jarvis/` or `%APPDATA%\Jarvis\`) to customize settings. Environment variables (prefixed with `JARVIS_`) can override configuration values.
 
 ---
 
@@ -694,32 +627,26 @@ This project was designed and originated by **orpheus497**.
 
 Jarvis relies on the following open-source projects, and we are grateful to their creators and maintainers:
 
-*   **Textual** (MIT License)  
-    Terminal UI framework  
-    Created by Will McGugan and the Textualize.io team  
-    https://github.com/Textualize/textual
-    
-*   **cryptography** (Apache 2.0/BSD License)  
-    Cryptographic primitives and protocols  
-    Created by the Python Cryptographic Authority  
-    https://github.com/pyca/cryptography
-    
-*   **argon2-cffi** (MIT License)  
-    Argon2 password hashing implementation  
-    Created by Hynek Schlawack  
-    https://github.com/hynek/argon2-cffi
-    
-*   **Rich** (MIT License)  
-    Terminal formatting and rendering library  
-    Created by Will McGugan  
-    https://github.com/Textualize/rich
+All dependencies are included and installed automatically:
 
-*   **pyperclip** (BSD 3-Clause License)  
-    Cross-platform clipboard support  
-    Created by Al Sweigart  
-    https://github.com/asweigart/pyperclip
+**Core Libraries:**
+*   **textual** - Terminal UI framework
+*   **cryptography** - Cryptographic primitives
+*   **argon2-cffi** - Password hashing
+*   **rich** - Terminal formatting
+*   **pyperclip** - Clipboard support
+*   **tomli** - TOML parser (Python <3.11)
+*   **zstandard** - Compression
+*   **liboqs-python** - Post-quantum cryptography
+*   **qrcode** & **pillow** - QR code generation
+*   **sounddevice** & **soundfile** - Voice messages
 
-All dependencies are free, open-source, and royalty-free. No external APIs or closed-source software is required.
+**Internet Connectivity:**
+*   **miniupnpc** - UPnP IGD port mapping (BSD 3-Clause)
+*   **pystun3** - STUN protocol client (MIT)
+*   **zeroconf** - mDNS/DNS-SD peer discovery (LGPL 2.1)
+*   **validators** - Input validation (MIT)
+*   **aiofiles** - Async file I/O (Apache 2.0)
 
 ### Standards and Protocols
 
@@ -743,6 +670,26 @@ This project implements industry-standard cryptographic protocols and best pract
 *   **Argon2** - Memory-hard password hashing (RFC 9106)  
     IETF standard for password-based key derivation
 
+*   **Double Ratchet Algorithm** - Forward secrecy protocol  
+    Signal Protocol specification for end-to-end encryption  
+    https://signal.org/docs/specifications/doubleratchet/
+
+*   **SQLite FTS5** - Full-text search engine  
+    High-performance full-text search implementation  
+    https://www.sqlite.org/fts5.html
+
+*   **UPnP IGD** - Internet Gateway Device Protocol  
+    Automatic port mapping for NAT traversal  
+    https://openconnectivity.org/developer/specifications/upnp-resources/upnp/
+
+*   **STUN** - Session Traversal Utilities for NAT (RFC 5389)  
+    IETF standard for NAT traversal and public address discovery  
+    https://tools.ietf.org/html/rfc5389
+
+*   **mDNS/DNS-SD** - Multicast DNS Service Discovery (RFC 6762/6763)  
+    IETF standard for zero-configuration networking  
+    https://tools.ietf.org/html/rfc6762
+
 ### Inspiration
 
 This project is inspired by the philosophy of [pwick](https://github.com/orpheus497/pwick) - complete local control, no external dependencies, and supreme security.
@@ -751,20 +698,7 @@ This project is inspired by the philosophy of [pwick](https://github.com/orpheus
 
 ## Contributing
 
-Contributions are welcome! Please:
-
-1.  Fork the repository
-2.  Create a feature branch
-3.  Make your changes
-4.  Add tests
-5.  Submit a pull request
-
-**Guidelines:**
-- Follow existing code style
-- Add docstrings to all functions
-- Update CHANGELOG.md
-- Ensure all tests pass
-- No external API dependencies
+Contributions welcome! Fork the repository, make your changes, and submit a pull request.
 
 ---
 

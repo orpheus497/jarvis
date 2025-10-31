@@ -4,17 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jarvis-messenger"
-version = "1.1.0"
-description = "A terminal-based peer-to-peer end-to-end encrypted messenger with multi-layer encryption and group chat"
+version = "2.1.0"
+description = "Terminal-based peer-to-peer end-to-end encrypted messenger with internet connectivity"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
     {name = "orpheus497"}
 ]
-keywords = ["messenger", "p2p", "encryption", "security", "privacy", "e2e", "terminal", "cli", "group-chat"]
+keywords = ["messenger", "p2p", "encryption", "security", "privacy", "e2e", "terminal", "cli", "nat-traversal"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
     "Topic :: Communications :: Chat",
     "Topic :: Security :: Cryptography",
@@ -29,16 +29,31 @@ classifiers = [
     "Environment :: Console",
 ]
 dependencies = [
-    "textual>=0.47.0",
-    "cryptography>=41.0.7",
+    "textual>=0.90.0",
+    "cryptography>=44.0.0",
     "argon2-cffi>=23.1.0",
-    "rich>=13.7.0",
+    "rich>=13.9.4",
+    "pyperclip>=1.9.0",
+    "tomli>=2.2.1; python_version < '3.11'",
+    "zstandard>=0.23.0",
+    "liboqs-python>=0.11.0",
+    "qrcode>=8.0",
+    "pillow>=10.0.0",
+    "sounddevice>=0.5.1",
+    "soundfile>=0.12.1",
+    "miniupnpc>=2.2.4",
+    "pystun3>=1.0.0",
+    "zeroconf>=0.131.0",
+    "validators>=0.22.0",
+    "aiofiles>=23.2.1",
 ]
 
 [project.urls]
 "Homepage" = "https://github.com/orpheus497/jarvis"
 "Bug Reports" = "https://github.com/orpheus497/jarvis/issues"
 "Source" = "https://github.com/orpheus497/jarvis"
+"Changelog" = "https://github.com/orpheus497/jarvis/blob/main/CHANGELOG.md"
+"Documentation" = "https://github.com/orpheus497/jarvis/blob/main/README.md"
 
 [project.scripts]
 jarvis = "jarvis.__main__:main"

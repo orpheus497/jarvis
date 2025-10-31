@@ -33,6 +33,14 @@ from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives import serialization
 from argon2.low_level import hash_secret_raw, Type
 
+# Import Double Ratchet for forward secrecy (optional)
+try:
+    from .ratchet import RatchetSession
+    RATCHET_AVAILABLE = True
+except ImportError:
+    RATCHET_AVAILABLE = False
+    RatchetSession = None
+
 
 class CryptoError(Exception):
     """Base exception for cryptographic operations."""
@@ -503,3 +511,186 @@ def derive_group_keys(group_secret: bytes, num_members: int) -> List[bytes]:
         member_key = hkdf.derive(group_secret + i.to_bytes(4, 'big'))
         keys.append(member_key)
     return keys
+
+
+# Double Ratchet Integration (v2.0)
+
+class RatchetSessionManager:
+    """
+    Manages Double Ratchet sessions for contacts.
+
+    Provides forward secrecy and self-healing properties through
+    the Double Ratchet algorithm. Sessions are created on-demand
+    and cached for performance.
+    """
+
+    def __init__(self):
+        """Initialize ratchet session manager."""
+        self.sessions: Dict[str, 'RatchetSession'] = {}
+
+    def get_or_create_session(
+        self,
+        contact_uid: str,
+        shared_secret: bytes,
+        sending: bool = True
+    ) -> Optional['RatchetSession']:
+        """
+        Get existing ratchet session or create new one.
+
+        Args:
+            contact_uid: Contact unique identifier
+            shared_secret: Shared secret from key exchange
+            sending: True if initiating, False if receiving
+
+        Returns:
+            RatchetSession instance or None if ratchet unavailable
+        """
+        if not RATCHET_AVAILABLE:
+            return None
+
+        if contact_uid not in self.sessions:
+            self.sessions[contact_uid] = RatchetSession(shared_secret, sending)
+
+        return self.sessions[contact_uid]
+
+    def remove_session(self, contact_uid: str) -> None:
+        """Remove ratchet session for a contact."""
+        if contact_uid in self.sessions:
+            del self.sessions[contact_uid]
+
+
+def encrypt_with_ratchet(
+    plaintext: str,
+    ratchet_session: 'RatchetSession'
+) -> Dict[str, str]:
+    """
+    Encrypt message using Double Ratchet.
+
+    Provides forward secrecy - each message uses a unique key
+    that is deleted immediately after encryption.
+
+    Args:
+        plaintext: Message to encrypt
+        ratchet_session: Active ratchet session
+
+    Returns:
+        Dictionary with encrypted data and ratchet metadata
+
+    Raises:
+        CryptoError: If encryption fails
+    """
+    if not RATCHET_AVAILABLE or not ratchet_session:
+        raise CryptoError("Double Ratchet not available")
+
+    try:
+        plaintext_bytes = plaintext.encode('utf-8')
+
+        # Encrypt with ratchet
+        ciphertext, dh_public, msg_number = ratchet_session.encrypt_message(plaintext_bytes)
+
+        # Return encrypted data with ratchet metadata
+        return {
+            'ciphertext': base64.b64encode(ciphertext).decode('utf-8'),
+            'dh_public': base64.b64encode(dh_public).decode('utf-8'),
+            'msg_number': msg_number,
+            'ratchet': True  # Flag to indicate ratchet encryption
+        }
+    except Exception as e:
+        raise CryptoError(f"Ratchet encryption failed: {e}")
+
+
+def decrypt_with_ratchet(
+    encrypted_data: Dict[str, str],
+    ratchet_session: 'RatchetSession'
+) -> str:
+    """
+    Decrypt message using Double Ratchet.
+
+    Handles out-of-order messages and automatic key rotation.
+
+    Args:
+        encrypted_data: Dictionary with encrypted data
+        ratchet_session: Active ratchet session
+
+    Returns:
+        Decrypted plaintext string
+
+    Raises:
+        CryptoError: If decryption fails
+    """
+    if not RATCHET_AVAILABLE or not ratchet_session:
+        raise CryptoError("Double Ratchet not available")
+
+    try:
+        ciphertext = base64.b64decode(encrypted_data['ciphertext'])
+        dh_public = base64.b64decode(encrypted_data['dh_public'])
+        msg_number = encrypted_data['msg_number']
+
+        # Decrypt with ratchet
+        plaintext_bytes = ratchet_session.decrypt_message(
+            ciphertext,
+            dh_public,
+            msg_number
+        )
+
+        return plaintext_bytes.decode('utf-8')
+    except Exception as e:
+        raise CryptoError(f"Ratchet decryption failed: {e}")
+
+
+def encrypt_message_with_ratchet_option(
+    plaintext: str,
+    session_keys: Tuple[bytes, bytes, bytes, bytes, bytes],
+    ratchet_session: Optional['RatchetSession'] = None,
+    use_ratchet: bool = False
+) -> Dict[str, str]:
+    """
+    Encrypt message with optional Double Ratchet.
+
+    Uses ratchet if available and enabled, otherwise falls back
+    to five-layer encryption for backward compatibility.
+
+    Args:
+        plaintext: Message to encrypt
+        session_keys: Five session keys for traditional encryption
+        ratchet_session: Optional ratchet session
+        use_ratchet: Whether to prefer ratchet encryption
+
+    Returns:
+        Dictionary with encrypted data
+    """
+    # Use ratchet if available and requested
+    if use_ratchet and RATCHET_AVAILABLE and ratchet_session:
+        return encrypt_with_ratchet(plaintext, ratchet_session)
+
+    # Fallback to traditional five-layer encryption
+    return encrypt_message_five_layer(plaintext, session_keys)
+
+
+def decrypt_message_with_ratchet_option(
+    encrypted_data: Dict[str, str],
+    session_keys: Tuple[bytes, bytes, bytes, bytes, bytes],
+    ratchet_session: Optional['RatchetSession'] = None
+) -> str:
+    """
+    Decrypt message with automatic ratchet detection.
+
+    Automatically detects if message was encrypted with ratchet
+    and uses appropriate decryption method.
+
+    Args:
+        encrypted_data: Encrypted message data
+        session_keys: Five session keys for traditional decryption
+        ratchet_session: Optional ratchet session
+
+    Returns:
+        Decrypted plaintext string
+    """
+    # Check if message was encrypted with ratchet
+    if encrypted_data.get('ratchet', False):
+        if not RATCHET_AVAILABLE or not ratchet_session:
+            raise CryptoError("Message encrypted with ratchet but ratchet unavailable")
+        return decrypt_with_ratchet(encrypted_data, ratchet_session)
+
+    # Use traditional five-layer decryption
+    return decrypt_message_five_layer(encrypted_data, session_keys)

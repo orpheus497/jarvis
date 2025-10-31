@@ -10,6 +10,10 @@ This module implements:
 - Automatic reconnection handling
 - Connection pooling and management
 - Unified asynchronous architecture
+- NAT traversal for internet connectivity
+- Connection state machine for reliability
+- Peer discovery via mDNS
+- Security manager for connection protection
 """
 
 import asyncio
@@ -17,11 +21,21 @@ import struct
 import logging
 from typing import Optional, Callable, Dict, Tuple, List, Set
 from datetime import datetime, timezone
+from pathlib import Path
 
 from . import crypto
 from . import protocol
 from .contact import Contact
 from .protocol import MessageType, Protocol
+from .rate_limiter import RateLimiter
+from .metrics import ConnectionMetrics
+from .errors import NetworkError, ErrorCode
+
+from .nat_traversal import NATTraversal, ConnectionStrategy
+from .connection_fsm import ConnectionStateMachine, ConnectionState as FSMState, ConnectionEvent
+from .discovery import DiscoveryService
+from .security_manager import SecurityManager
+from .message_queue import MessageQueue
 
 # Configure logging for connection diagnostics
 logger = logging.getLogger(__name__)
@@ -67,39 +81,73 @@ class P2PConnection:
     PING_INTERVAL = 30  # Seconds between keepalive pings
     PONG_TIMEOUT = 90  # Seconds before considering connection dead
     
-    def __init__(self, contact: Contact, identity: crypto.IdentityKeyPair, 
-                 my_uid: str, my_username: str):
+    def __init__(self, contact: Contact, identity: crypto.IdentityKeyPair,
+                 my_uid: str, my_username: str,
+                 rate_limiter: Optional[RateLimiter] = None,
+                 metrics: Optional[ConnectionMetrics] = None):
         self.contact = contact
         self.identity = identity
         self.my_uid = my_uid
         self.my_username = my_username
-        
+
         self.session_keys: Optional[Tuple[bytes, bytes, bytes, bytes, bytes]] = None
         self.reader: Optional[asyncio.StreamReader] = None
         self.writer: Optional[asyncio.StreamWriter] = None
         self.state = ConnectionState.DISCONNECTED
         
+        # Connection state machine
+        self.fsm = ConnectionStateMachine()
+        self.fsm.on_state_change = self._on_fsm_state_change
+        self.fsm.on_connected = self._on_fsm_connected
+        self.fsm.on_disconnected = self._on_fsm_disconnected
+
         self.receive_task: Optional[asyncio.Task] = None
         self.send_queue = asyncio.Queue()
         self.send_task: Optional[asyncio.Task] = None
         self.keepalive_task: Optional[asyncio.Task] = None
-        
+
         self.buffer = b''
         self.last_ping = asyncio.get_event_loop().time()
         self.last_pong = asyncio.get_event_loop().time()
-        
+
+        # Rate limiting and metrics
+        self.rate_limiter = rate_limiter
+        self.metrics = metrics or ConnectionMetrics(contact.address or 'unknown')
+
         # Connection statistics for diagnostics
         self.connection_attempts = 0
         self.last_error = None
         self.bytes_sent = 0
         self.bytes_received = 0
-        
+
         # Callbacks
         self.on_message_callback: Optional[Callable] = None
         self.on_group_message_callback: Optional[Callable] = None
         self.on_state_change_callback: Optional[Callable] = None
         
         self._lock = asyncio.Lock()
+    
+    def _on_fsm_state_change(self, old_state: FSMState, new_state: FSMState):
+        """Handle FSM state changes."""
+        logger.debug(f"Connection FSM: {old_state.name} -> {new_state.name} for {self.contact.username}")
+        
+        # Update legacy state for compatibility
+        if new_state == FSMState.CONNECTED:
+            self._set_state(ConnectionState.AUTHENTICATED)
+        elif new_state in [FSMState.CONNECTING, FSMState.AUTHENTICATING]:
+            self._set_state(ConnectionState.CONNECTING)
+        elif new_state == FSMState.DISCONNECTED:
+            self._set_state(ConnectionState.DISCONNECTED)
+        elif new_state == FSMState.ERROR:
+            self._set_state(ConnectionState.ERROR)
+    
+    def _on_fsm_connected(self):
+        """Called when FSM reaches CONNECTED state."""
+        logger.info(f"FSM confirms connection to {self.contact.username}")
+    
+    def _on_fsm_disconnected(self):
+        """Called when FSM reaches DISCONNECTED state."""
+        logger.info(f"FSM confirms disconnection from {self.contact.username}")
     
     async def connect(self) -> bool:
         """
@@ -119,6 +167,10 @@ class P2PConnection:
         """
         try:
             self.connection_attempts += 1
+            
+            # FSM: Start connection process
+            self.fsm.transition(ConnectionEvent.CONNECT_REQUESTED)
+            
             self._set_state(ConnectionState.CONNECTING)
             logger.info(f"Attempting connection to {self.contact.username} ({self.contact.host}:{self.contact.port}) - Attempt #{self.connection_attempts}")
             
@@ -129,12 +181,20 @@ class P2PConnection:
                     timeout=self.CONNECT_TIMEOUT
                 )
                 logger.debug(f"TCP connection established to {self.contact.username}")
+                
+                # FSM: TCP connected
+                self.fsm.transition(ConnectionEvent.TCP_CONNECTED)
             except asyncio.TimeoutError:
                 logger.warning(f"Connection timeout to {self.contact.username} after {self.CONNECT_TIMEOUT}s")
+                self.fsm.transition(ConnectionEvent.TCP_FAILED)
                 raise ConnectionError("Connection timeout")
             except OSError as e:
                 logger.warning(f"Connection failed to {self.contact.username}: {e}")
+                self.fsm.transition(ConnectionEvent.TCP_FAILED)
                 raise
+            
+            # FSM: Start authentication
+            self.fsm.transition(ConnectionEvent.AUTH_STARTED)
             
             # Send our public key
             our_public_key = self.identity.get_public_key_bytes()
@@ -152,6 +212,7 @@ class P2PConnection:
                 key_len = struct.unpack('!I', key_len_data)[0]
                 if key_len != 32:
                     logger.error(f"Invalid public key length from {self.contact.username}: {key_len}")
+                    self.fsm.transition(ConnectionEvent.AUTH_FAILED)
                     raise ValueError(f"Invalid public key length: {key_len}")
                 
                 peer_public_key_bytes = await asyncio.wait_for(
@@ -162,6 +223,7 @@ class P2PConnection:
                 logger.debug(f"Received public key from {self.contact.username}")
             except asyncio.TimeoutError:
                 logger.error(f"Handshake timeout with {self.contact.username}")
+                self.fsm.transition(ConnectionEvent.AUTH_FAILED)
                 raise ConnectionError("Handshake timeout")
             
             # Verify fingerprint
@@ -221,6 +283,9 @@ class P2PConnection:
                 raise ConnectionRefusedError("Handshake rejected by peer")
             
             logger.debug(f"Handshake accepted by {self.contact.username}")
+            
+            # FSM: Authentication complete
+            self.fsm.transition(ConnectionEvent.AUTH_COMPLETE)
             
             # Mark as authenticated
             self._set_state(ConnectionState.AUTHENTICATED)
@@ -325,19 +390,31 @@ class P2PConnection:
                     if not data:
                         logger.warning(f"Connection closed by {self.contact.username}")
                         break
-                    
+
+                    # Track metrics for received data
                     self.bytes_received += len(data)
+                    self.metrics.record_packet_received(len(data))
                     self.buffer += data
-                    
+
                     # Process all complete messages in buffer
                     while len(self.buffer) >= Protocol.HEADER_SIZE:
                         result = Protocol.unpack_message(self.buffer)
                         if not result:
                             break
-                        
+
                         msg_type, payload, consumed = result
                         self.buffer = self.buffer[consumed:]
-                        
+
+                        # Check rate limiting if enabled
+                        if self.rate_limiter:
+                            address = self.contact.address or 'unknown'
+                            if not self.rate_limiter.check_message_rate(address):
+                                logger.warning(
+                                    f"Rate limit exceeded for {self.contact.username}, "
+                                    f"dropping message"
+                                )
+                                continue
+
                         # Handle message
                         try:
                             await self._handle_message(msg_type, payload)
@@ -374,6 +451,9 @@ class P2PConnection:
                     self.writer.write(message)
                     await self.writer.drain()
                     self.bytes_sent += len(message)
+
+                    # Track metrics for sent data
+                    self.metrics.record_packet_sent(len(message))
                     
                 except asyncio.TimeoutError:
                     continue
@@ -402,7 +482,10 @@ class P2PConnection:
                     ping = Protocol.create_ping()
                     await self.send_queue.put(ping)
                     self.last_ping = asyncio.get_event_loop().time()
-                    
+
+                    # Record ping time for latency measurement
+                    self.metrics.record_ping()
+
                     # Check if we've received a pong recently
                     if asyncio.get_event_loop().time() - self.last_pong > self.PONG_TIMEOUT:
                         logger.warning(f"No pong from {self.contact.username} in {self.PONG_TIMEOUT}s")
@@ -483,6 +566,11 @@ class P2PConnection:
         elif msg_type == MessageType.PONG:
             # Update last pong time
             self.last_pong = asyncio.get_event_loop().time()
+
+            # Record pong time for latency measurement
+            latency = self.metrics.record_pong()
+            if latency:
+                logger.debug(f"Latency to {self.contact.username}: {latency:.2f}ms")
         
         elif msg_type == MessageType.DISCONNECT:
             # Peer initiated disconnect
@@ -662,12 +750,14 @@ class NetworkManager:
     MANAGER_LOOP_INTERVAL = 10  # Connection manager check interval in seconds
     
     def __init__(self, identity: crypto.IdentityKeyPair, my_uid: str, 
-                 my_username: str, listen_port: int, contact_manager):
+                 my_username: str, listen_port: int, contact_manager,
+                 data_dir: Optional[Path] = None):
         self.identity = identity
         self.my_uid = my_uid
         self.my_username = my_username
         self.listen_port = listen_port
         self.contact_manager = contact_manager
+        self.data_dir = Path(data_dir) if data_dir else Path.home() / '.jarvis'
         
         self.connections: Dict[str, P2PConnection] = {}  # uid -> connection
         self.server = P2PServer(listen_port, identity, my_uid, my_username)
@@ -685,31 +775,137 @@ class NetworkManager:
         self.connection_manager_task: Optional[asyncio.Task] = None
         self.running = False
         
+        # New managers
+        self.nat_traversal: Optional[NATTraversal] = None
+        self.discovery: Optional[DiscoveryService] = None
+        self.security: Optional[SecurityManager] = None
+        self.message_queue = None
+        
+        # Public address info (from NAT traversal)
+        self.public_ip: Optional[str] = None
+        self.public_port: Optional[int] = None
+        
         self._lock = asyncio.Lock()
     
     async def start_server(self) -> bool:
         """Start listening for incoming connections and background connection manager."""
-        self.server.on_connection_callback = self._handle_incoming_connection
-        success = await self.server.start()
+        try:
+            # Initialize NAT traversal
+            logger.info("Initializing NAT traversal...")
+            self.nat_traversal = NATTraversal()
+            
+            # Detect NAT type
+            nat_type = self.nat_traversal.detect_nat_type(self.listen_port)
+            logger.info(f"NAT type detected: {nat_type.value}")
+            
+            # Try UPnP port mapping
+            upnp_result = self.nat_traversal.setup_upnp_mapping(
+                self.listen_port,
+                protocol='TCP',
+                description='Jarvis P2P Messenger'
+            )
+            
+            if upnp_result:
+                self.public_ip, self.public_port = upnp_result
+                logger.info(f"UPnP port mapping successful: {self.public_ip}:{self.public_port}")
+            else:
+                logger.warning("UPnP port mapping failed, trying STUN...")
+                # Try STUN for public address discovery
+                stun_result = self.nat_traversal.get_public_address(self.listen_port)
+                if stun_result:
+                    self.public_ip, self.public_port = stun_result
+                    logger.info(f"STUN discovery successful: {self.public_ip}:{self.public_port}")
+                else:
+                    logger.warning("NAT traversal unsuccessful, connections limited to LAN")
+            
+            # Initialize security manager
+            logger.info("Initializing security manager...")
+            self.security = SecurityManager()
+            
+            # Initialize message queue
+            logger.info("Initializing message queue...")
+            self.message_queue = MessageQueue(self.data_dir / 'message_queue.db')
+            
+            # Initialize discovery service
+            logger.info("Initializing peer discovery...")
+            public_key_b64 = self.identity.get_public_key_base64()
+            fingerprint = crypto.generate_fingerprint(self.identity.get_public_key_bytes())
+            
+            self.discovery = DiscoveryService(
+                self.my_uid,
+                self.my_username,
+                public_key_b64,
+                fingerprint
+            )
+            self.discovery.on_peer_discovered = self._handle_peer_discovered
+            self.discovery.on_peer_lost = self._handle_peer_lost
+            
+            # Start discovery service
+            discovery_started = await self.discovery.start(
+                self.public_port or self.listen_port
+            )
+            if discovery_started:
+                logger.info("Peer discovery service started")
+            else:
+                logger.warning("Peer discovery service failed to start")
+            
+            # Start P2P server
+            self.server.on_connection_callback = self._handle_incoming_connection
+            success = await self.server.start()
+            
+            if success:
+                # Start background connection manager
+                self.running = True
+                self.connection_manager_task = asyncio.create_task(self._connection_manager_loop())
+                logger.info("Network manager started successfully")
+            
+            return success
         
-        if success:
-            # Start background connection manager
-            self.running = True
-            self.connection_manager_task = asyncio.create_task(self._connection_manager_loop())
-        
-        return success
+        except Exception as e:
+            logger.error(f"Failed to start network manager: {e}", exc_info=True)
+            return False
     
     async def stop_server(self):
         """Stop listening for connections and background tasks."""
+        logger.info("Stopping network manager...")
         self.running = False
+        
+        # Stop discovery service
+        if self.discovery:
+            try:
+                await self.discovery.stop()
+                logger.info("Discovery service stopped")
+            except Exception as e:
+                logger.warning(f"Error stopping discovery: {e}")
+        
+        # Cleanup NAT traversal
+        if self.nat_traversal:
+            try:
+                self.nat_traversal.cleanup_mappings()
+                logger.info("NAT traversal cleaned up")
+            except Exception as e:
+                logger.warning(f"Error cleaning up NAT traversal: {e}")
+        
+        # Cleanup message queue
+        if self.message_queue:
+            try:
+                await self.message_queue.cleanup_expired()
+                logger.info("Message queue cleaned up")
+            except Exception as e:
+                logger.warning(f"Error cleaning up message queue: {e}")
+        
+        # Stop P2P server
         await self.server.stop()
         
+        # Stop connection manager
         if self.connection_manager_task and not self.connection_manager_task.done():
             self.connection_manager_task.cancel()
             try:
                 await self.connection_manager_task
             except asyncio.CancelledError:
                 pass
+        
+        logger.info("Network manager stopped")
     
     async def _connection_manager_loop(self):
         """
@@ -818,11 +1014,33 @@ class NetworkManager:
                 del self.connections[uid]
     
     async def send_message(self, uid: str, message: str, message_id: str, timestamp: str) -> bool:
-        """Send direct message to a peer."""
+        """Send direct message to a peer, queue if offline."""
         connection = self.connections.get(uid)
+        
         if connection and connection.state == ConnectionState.AUTHENTICATED:
-            return await connection.send_message(message, message_id, timestamp)
-        return False
+            # Peer is online, send directly
+            success = await connection.send_message(message, message_id, timestamp)
+            
+            if success:
+                # Try to deliver any queued messages for this peer
+                if self.message_queue:
+                    asyncio.create_task(self._deliver_queued_messages(uid))
+            
+            return success
+        else:
+            # Peer is offline, queue message
+            if self.message_queue:
+                logger.info(f"Peer {uid[:8]} is offline, queueing message {message_id[:8]}")
+                await self.message_queue.enqueue(
+                    recipient_uid=uid,
+                    sender_uid=self.my_uid,
+                    message_type='text',
+                    message_data={'content': message, 'message_id': message_id, 'timestamp': timestamp}
+                )
+                return True  # Queued successfully
+            else:
+                logger.warning(f"Message queue not initialized, cannot queue message for {uid[:8]}")
+                return False
     
     async def send_group_message(self, group_id: str, message: str, 
                                   message_id: str, timestamp: str) -> int:
@@ -957,6 +1175,20 @@ class NetworkManager:
                                            session_keys: Tuple, fingerprint: str, 
                                            address: Tuple[str, int], handshake_payload: Dict):
         """Handle incoming connection from a peer."""
+        ip_address = address[0]
+        
+        # Security check: verify IP is allowed
+        if self.security:
+            allowed, reason = await self.security.check_ip_allowed(ip_address)
+            if not allowed:
+                logger.warning(f"Connection rejected from {ip_address}: {reason}")
+                writer.close()
+                await writer.wait_closed()
+                return
+            
+            # Record connection attempt
+            await self.security.record_connection_attempt(ip_address, success=True)
+        
         async with self._lock:
             # Check if we already have a connection with this fingerprint
             for conn in self.connections.values():
@@ -973,6 +1205,11 @@ class NetworkManager:
                 writer.close()
                 await writer.wait_closed()
                 logger.warning(f"Rejected connection from unknown fingerprint: {fingerprint[:16]}...")
+                
+                # Record failed connection attempt
+                if self.security:
+                    await self.security.record_connection_attempt(ip_address, success=False)
+                
                 return
 
             # Create a new connection object
@@ -1006,6 +1243,72 @@ class NetworkManager:
 
             # Add to connections
             self.connections[contact.uid] = connection
+    
+    async def _handle_peer_discovered(self, peer):
+        """Handle newly discovered peer via mDNS."""
+        logger.info(f"Peer discovered: {peer.username} ({peer.uid[:8]})")
+        
+        # Check if this is a known contact
+        contact = self.contact_manager.get_contact_by_fingerprint(peer.fingerprint)
+        
+        if contact:
+            # Known contact, update address if needed
+            if peer.addresses:
+                host, port = peer.addresses[0]
+                if contact.host != host or contact.port != port:
+                    logger.info(f"Updating address for {peer.username}: {host}:{port}")
+                    contact.host = host
+                    contact.port = port
+                    self.contact_manager.update_contact(contact)
+                
+                # Try to connect if not already connected
+                if contact.uid not in self.connections:
+                    logger.info(f"Auto-connecting to discovered peer: {peer.username}")
+                    asyncio.create_task(self.connect(contact.uid))
+        else:
+            logger.info(f"Discovered unknown peer: {peer.username} (fingerprint: {peer.fingerprint[:16]}...)")
+            # Could notify UI to allow adding as contact
+    
+    async def _handle_peer_lost(self, peer):
+        """Handle peer that left the network."""
+        logger.info(f"Peer lost: {peer.username} ({peer.uid[:8]})")
+    
+    async def _deliver_queued_messages(self, uid: str):
+        """Deliver queued messages to a newly connected peer."""
+        if not self.message_queue:
+            return
+        
+        connection = self.connections.get(uid)
+        if not connection or connection.state != ConnectionState.AUTHENTICATED:
+            return
+        
+        logger.info(f"Attempting to deliver queued messages to {uid[:8]}")
+        
+        # Get all queued messages for this recipient
+        queued = await self.message_queue.get_queued_for_recipient(uid)
+        
+        for msg in queued:
+            try:
+                # Try to send the message
+                message_data = msg['message_data']
+                success = await connection.send_message(
+                    message_data['content'],
+                    message_data['message_id'],
+                    message_data['timestamp']
+                )
+                
+                if success:
+                    # Mark as delivered
+                    await self.message_queue.mark_delivered(msg['queue_id'])
+                    logger.info(f"Delivered queued message {msg['queue_id']} to {uid[:8]}")
+                else:
+                    # Mark as failed, will retry later
+                    await self.message_queue.mark_failed(msg['queue_id'])
+                    logger.warning(f"Failed to deliver queued message {msg['queue_id']} to {uid[:8]}")
+                    
+            except Exception as e:
+                logger.error(f"Error delivering queued message to {uid[:8]}: {e}")
+                await self.message_queue.mark_failed(msg['queue_id'])
     
     async def disconnect_all(self):
         """Disconnect from all peers."""

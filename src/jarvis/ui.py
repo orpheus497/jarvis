@@ -42,6 +42,23 @@ from .utils import (
     validate_ip, validate_hostname, format_fingerprint, truncate_string
 )
 
+# Import new UI components and screens
+from .ui_components import (
+    FileTransferProgress,
+    ConnectionQualityIndicator,
+    ErrorDialog,
+    ConfirmationDialog,
+    SearchResultsList,
+    StatisticsChart
+)
+from .ui_screens import (
+    FileTransferScreen,
+    SearchScreen,
+    StatisticsScreen,
+    ConfigurationScreen,
+    BackupManagementScreen
+)
+
 # ASCII Banner for Jarvis
 JARVIS_BANNER = """░        ░░░      ░░░       ░░░  ░░░░  ░░        ░░░      ░░
 ▒▒▒▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒  ▒▒▒▒  ▒▒▒▒▒  ▒▒▒▒▒  ▒▒▒▒▒▒▒
@@ -1082,6 +1099,63 @@ class JarvisApp(App):
         background: #0a0a0a;
         color: #666666;
     }
+
+    /* New screens and components styling */
+    #search-controls, #backup-controls, #config-container, #stats-container {
+        background: #0a0a0a;
+        padding: 1;
+        border: solid #444444;
+    }
+
+    .section-header {
+        color: #ff4444;
+        text-style: bold;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
+
+    .config-label {
+        width: 25;
+        color: #cccccc;
+    }
+
+    #screen-title {
+        text-align: center;
+        text-style: bold;
+        color: #ff4444;
+        padding: 1;
+        background: #1a1a1a;
+    }
+
+    #search-actions, #transfer-actions, #backup-actions, #config-actions {
+        align: center middle;
+        height: auto;
+        margin-top: 1;
+    }
+
+    #results-container, #transfers-container, #backup-list-container {
+        height: 1fr;
+        border: solid #444444;
+        background: #000000;
+        margin-top: 1;
+    }
+
+    #result-count {
+        color: #888888;
+        text-align: center;
+        margin-top: 1;
+    }
+
+    DataTable {
+        background: #0a0a0a;
+        color: #cccccc;
+    }
+
+    /* Connection quality indicator */
+    ConnectionQualityIndicator {
+        padding: 0 1;
+        color: #cccccc;
+    }
     """
 
     BINDINGS = [
@@ -1091,6 +1165,11 @@ class JarvisApp(App):
         Binding("ctrl+l", "lock_app", "Lock"),
         Binding("ctrl+i", "contact_info", "Contact Info"),
         Binding("ctrl+d", "delete_current", "Delete"),
+        Binding("ctrl+f", "search_messages", "Search"),
+        Binding("ctrl+t", "show_statistics", "Statistics"),
+        Binding("ctrl+b", "backup_management", "Backup"),
+        Binding("ctrl+e", "configuration", "Config"),
+        Binding("ctrl+r", "file_transfers", "Transfers"),
         Binding("ctrl+q", "quit", "Quit"),
     ]
 
@@ -1150,9 +1229,33 @@ class JarvisApp(App):
 
     async def load_identity_worker(self) -> None:
         """Worker to load or create identity."""
-        # Connect to server first
-        if not await self.client_adapter.connect_to_server_async():
-            self.notify("Failed to connect to server", severity="error")
+        # Try to connect to server (may already be running)
+        try:
+            connected = await self.client_adapter.connect_to_server_async()
+            
+            if not connected:
+                # Server not running, try to start it
+                self.notify("Server not running, starting...", severity="information")
+                
+                from .daemon_manager import DaemonManager
+                daemon_manager = DaemonManager(Path(self.data_dir), self.ipc_port)
+                
+                if not daemon_manager.start_daemon(timeout=10):
+                    self.notify("Failed to start server daemon", severity="error")
+                    self.notify("Check logs and try running: jarvis-server", severity="error")
+                    self.exit()
+                    return
+                
+                # Server started, try connecting again
+                if not await self.client_adapter.connect_to_server_async():
+                    self.notify("Started server but failed to connect", severity="error")
+                    self.exit()
+                    return
+                
+                self.notify("Server started successfully", severity="information")
+        
+        except Exception as e:
+            self.notify(f"Server connection error: {e}", severity="error")
             self.exit()
             return
         
@@ -1172,7 +1275,8 @@ class JarvisApp(App):
         self.session_manager.create_session(self.identity.uid)
 
         # Login to server
-        if not await self.client_adapter.login_async(self.password):
+        login_success = await self.client_adapter.login_async(self.password)
+        if not login_success:
             self.notify("Failed to login to server", severity="error")
             await self.client_adapter.disconnect_from_server_async()
             self.exit()
@@ -1638,14 +1742,191 @@ class JarvisApp(App):
         # Just call the contact info action which has delete option
         self.action_contact_info()
 
+    def action_search_messages(self) -> None:
+        """Open message search screen."""
+        self.run_worker(self._show_search())
+
+    async def _show_search(self) -> None:
+        """Worker to show search screen."""
+        def search_callback(query: str, contact_uid: str = None,
+                          group_id: str = None) -> List[Dict]:
+            """Search messages and return results."""
+            messages = self.message_store.search_messages(
+                query=query,
+                contact_uid=contact_uid,
+                group_id=group_id,
+                limit=50
+            )
+
+            # Convert Message objects to dict format for display
+            results = []
+            for msg in messages:
+                # Get sender name
+                if msg.sent_by_me:
+                    sender = "You"
+                elif msg.is_group_message() and msg.sender_uid:
+                    contact = self.contact_manager.get_contact(msg.sender_uid)
+                    sender = contact.username if contact else "Unknown"
+                else:
+                    contact = self.contact_manager.get_contact(msg.contact_uid)
+                    sender = contact.username if contact else "Unknown"
+
+                # Parse timestamp
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(msg.timestamp.replace('Z', '+00:00'))
+                    timestamp = int(dt.timestamp())
+                except:
+                    timestamp = 0
+
+                results.append({
+                    'sender': sender,
+                    'timestamp': timestamp,
+                    'content': msg.content,
+                    'snippet': msg.content  # Could add highlighting here
+                })
+
+            return results
+
+        search_screen = SearchScreen(search_callback=search_callback)
+        await self.push_screen_wait(search_screen)
+
+    def action_show_statistics(self) -> None:
+        """Open statistics screen."""
+        self.run_worker(self._show_statistics())
+
+    async def _show_statistics(self) -> None:
+        """Worker to show statistics screen."""
+        def stats_callback():
+            """Get current statistics."""
+            # Gather overall statistics
+            overall_stats = {
+                'packets': {
+                    'sent': 0,
+                    'received': 0,
+                    'loss_rate_percent': 0.0
+                },
+                'bytes': {
+                    'total': 0
+                },
+                'uptime_seconds': 0
+            }
+
+            # Gather per-contact statistics
+            contact_stats = {}
+            for contact in self.contact_manager.get_all_contacts():
+                if self.network_manager and hasattr(self.network_manager, 'get_connection_metrics'):
+                    metrics = self.network_manager.get_connection_metrics(contact.uid)
+                    if metrics:
+                        contact_stats[contact.username] = metrics
+                else:
+                    # Placeholder stats
+                    contact_stats[contact.username] = {
+                        'latency': {'average_ms': 0},
+                        'packets': {'sent': 0, 'received': 0},
+                    }
+
+            return overall_stats, contact_stats
+
+        stats_screen = StatisticsScreen(stats_callback=stats_callback)
+        await self.push_screen_wait(stats_screen)
+
+    def action_backup_management(self) -> None:
+        """Open backup management screen."""
+        self.run_worker(self._show_backup_management())
+
+    async def _show_backup_management(self) -> None:
+        """Worker to show backup management screen."""
+        def backup_callback(password: Optional[str] = None):
+            """Create a new backup."""
+            if self.client_adapter:
+                result = self.client_adapter.create_backup(password=password)
+                if result.get('success'):
+                    self.notify(f"Backup created: {result['backup_path']}",
+                              severity="information")
+                    return result
+                else:
+                    self.notify("Failed to create backup", severity="error")
+            return None
+
+        def restore_callback(backup_path: str, password: Optional[str] = None):
+            """Restore from a backup."""
+            if self.client_adapter:
+                result = self.client_adapter.restore_backup(
+                    backup_path=backup_path,
+                    password=password
+                )
+                if result.get('success'):
+                    self.notify("Backup restored successfully", severity="information")
+                    return result
+                else:
+                    self.notify("Failed to restore backup", severity="error")
+            return None
+
+        backup_screen = BackupManagementScreen(
+            backup_callback=backup_callback,
+            restore_callback=restore_callback
+        )
+
+        # Update backup list if available
+        if self.client_adapter and hasattr(self.client_adapter, 'list_backups'):
+            backups = self.client_adapter.list_backups()
+            if backups.get('success'):
+                backup_screen.update_backup_list(backups.get('backups', []))
+
+        await self.push_screen_wait(backup_screen)
+
+    def action_configuration(self) -> None:
+        """Open configuration screen."""
+        self.run_worker(self._show_configuration())
+
+    async def _show_configuration(self) -> None:
+        """Worker to show configuration screen."""
+        def save_callback(config: Dict):
+            """Save configuration changes."""
+            if self.client_adapter and hasattr(self.client_adapter, 'update_config'):
+                result = self.client_adapter.update_config(config)
+                if result.get('success'):
+                    self.notify("Configuration saved successfully", severity="information")
+                else:
+                    self.notify("Failed to save configuration", severity="error")
+
+        # Get current configuration
+        current_config = {}
+        if self.client_adapter and hasattr(self.client_adapter, 'get_config'):
+            result = self.client_adapter.get_config()
+            if result.get('success'):
+                current_config = result.get('config', {})
+
+        config_screen = ConfigurationScreen(
+            config=current_config,
+            save_callback=save_callback
+        )
+        await self.push_screen_wait(config_screen)
+
+    def action_file_transfers(self) -> None:
+        """Open file transfer management screen."""
+        self.run_worker(self._show_file_transfers())
+
+    async def _show_file_transfers(self) -> None:
+        """Worker to show file transfer screen."""
+        file_transfer_screen = FileTransferScreen()
+
+        # TODO: Populate with active transfers from client_adapter
+        # if self.client_adapter and hasattr(self.client_adapter, 'get_active_transfers'):
+        #     transfers = self.client_adapter.get_active_transfers()
+        #     for transfer in transfers:
+        #         file_transfer_screen.add_transfer(...)
+
+        await self.push_screen_wait(file_transfer_screen)
+
     def action_quit(self) -> None:
         """Quit the application."""
         self.run_worker(self._quit_app())
-    
+
     async def _quit_app(self) -> None:
         """Worker to quit the application."""
         if self.client_adapter:
             await self.client_adapter.logout_async()
             await self.client_adapter.disconnect_from_server_async()
-        self.exit()
         self.exit()

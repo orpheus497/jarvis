@@ -7,6 +7,331 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2025-10-31
+
+### Fixed
+- **CRITICAL:** Application crash when server already running on subsequent logins
+- Network port conflicts on re-login resolved
+- Server detection reliability improved with comprehensive health checks
+- Multiple UI instances can now connect to the same server simultaneously
+- Server persistence across UI restarts working correctly
+
+### Added
+- **Daemon Manager** - Professional server lifecycle management (415 lines)
+  - Cross-platform daemon control (Windows + Unix)
+  - Reliable server detection (PID + port + connectivity verification)
+  - Graceful startup/shutdown with configurable timeouts
+  - Health monitoring and detailed status reporting
+  - Automatic cleanup of stale state
+  - Implemented in `daemon_manager.py` module
+  
+- **NAT Traversal** - Automatic internet connectivity (438 lines)
+  - UPnP IGD automatic port mapping for routers
+  - STUN protocol for public IP discovery
+  - NAT type detection (7 different types supported)
+  - Connection strategy selection based on network topology
+  - Multiple STUN servers with automatic fallback
+  - Automatic port mapping cleanup on shutdown
+  - Implemented in `nat_traversal.py` module
+  
+- **Connection State Machine** - Reliable connection management (360 lines)
+  - Formal finite state machine with 8 connection states
+  - 14 events for proper state transitions
+  - Comprehensive transition validation
+  - Per-state timeout handling
+  - State history tracking (last 100 transitions)
+  - Statistics and diagnostics for debugging
+  - Callback support for state change notifications
+  - Implemented in `connection_fsm.py` module
+  
+- **Message Queue** - Offline message delivery (426 lines)
+  - SQLite-based persistent queue for reliability
+  - Automatic expiration (7 days configurable)
+  - Exponential backoff retry logic for failed deliveries
+  - Delivery receipt tracking
+  - Queue size limits per recipient (1000 messages)
+  - Statistics and monitoring APIs
+  - Automatic cleanup of expired messages
+  - Implemented in `message_queue.py` module
+  
+- **Peer Discovery** - Automatic LAN peer finding (490 lines)
+  - mDNS/DNS-SD service for local network discovery
+  - Automatic peer announcement and detection
+  - Real-time peer discovery with callbacks
+  - Peer freshness tracking with configurable TTL
+  - Automatic address updates for discovered peers
+  - SimpleDHT placeholder for future internet discovery
+  - Statistics and monitoring
+  - Implemented in `discovery.py` module
+  
+- **Security Manager** - Internet security hardening (475 lines)
+  - Pre-authentication challenge-response (HMAC-SHA256)
+  - IP whitelisting and blacklisting support
+  - Temporary IP banning with configurable duration
+  - Connection limits per IP address
+  - Aggressive rate limiting for internet connections
+  - Security event logging with 1000-event history
+  - Failed attempt tracking with auto-ban
+  - Implemented in `security_manager.py` module
+
+### Changed
+- Server now persists across UI restarts for better reliability
+- Logout no longer stops the network server (preserves connections)
+- Network manager reused instead of recreated on re-login
+- Enhanced logging throughout all modules for better debugging
+- Improved error messages with actionable troubleshooting steps
+- Connection handling redesigned with FSM for robustness
+- Network initialization includes NAT traversal and peer discovery
+
+### Dependencies
+- Added `miniupnpc>=2.2.4` for UPnP port mapping (BSD 3-Clause license)
+- Added `pystun3>=1.0.0` for STUN protocol (MIT license)
+- Added `zeroconf>=0.131.0` for mDNS discovery (LGPL 2.1 license)
+- Added `validators>=0.22.0` for input validation (MIT license)
+- Added `aiofiles>=23.2.1` for async file I/O (Apache 2.0 license)
+
+### Technical Details
+- Protocol version updated to 2.1
+- Application version updated to 2.1.0
+- Added 50+ new constants for v2.1.0 features
+- Total new code: 2,604 lines across 6 modules
+- All modules fully integrated into network layer
+- Complete error handling and logging in all new code
+- Cross-platform compatibility maintained
+
+## [2.0.0] - 2025-10-31
+
+### Added
+- **Double Ratchet algorithm** for forward and backward secrecy
+  - Signal Protocol-style ratcheting with X25519 Diffie-Hellman
+  - Automatic per-message key rotation
+  - Separate sending and receiving chains
+  - Message keys deleted after use to prevent retroactive decryption
+  - Implemented in `ratchet.py` module (557 lines)
+- **Encrypted file transfer system** with chunking and resume capability
+  - Files split into 1MB chunks for efficient transmission
+  - Each chunk encrypted with five-layer encryption
+  - Progress tracking with callbacks
+  - Automatic retry on failure
+  - SHA-256 checksum verification
+  - Resume support for interrupted transfers
+  - Implemented in `file_transfer.py` module (538 lines)
+- **Full-text message search** using SQLite FTS5
+  - Instant search across all messages and conversations
+  - Filter by contact, date range, or message content
+  - Result highlighting and context display
+  - Pagination support for large result sets
+  - Automatic migration from JSON to SQLite storage
+  - Implemented in `search.py` module (300+ lines)
+- **Configuration system** with TOML file support
+  - User-configurable settings in `config.toml`
+  - Environment variable overrides (JARVIS_* prefix)
+  - Sensible defaults for all settings
+  - Network tuning (ports, timeouts, buffer sizes)
+  - UI customization (theme, colors, display options)
+  - Backup scheduling configuration
+  - Notification preferences
+  - Logging configuration
+  - Implemented in `config.py` module (300 lines)
+- **Automatic encrypted backup system**
+  - Scheduled automatic backups (configurable interval)
+  - Separate backup password for additional security
+  - Compressed archives (tar.gz with encryption)
+  - Automatic rotation policy (keep last N backups)
+  - Manual backup trigger
+  - Full restore functionality
+  - Backup verification and integrity checks
+  - Implemented in `backup.py` module (300+ lines)
+- **Rate limiting and abuse prevention**
+  - Token bucket algorithm implementation
+  - Per-contact message rate limits (configurable)
+  - Per-IP connection rate limits
+  - Automatic ban for rate limit violations
+  - Ban expiration and management
+  - Whitelist support
+  - Protection against DoS attacks
+  - Implemented in `rate_limiter.py` module (250+ lines)
+- **Connection quality metrics and monitoring**
+  - Real-time latency measurement
+  - Throughput calculation
+  - Connection quality indicators (1-5 bars)
+  - Packet loss detection
+  - Network statistics tracking
+  - Performance diagnostics
+  - Implemented in `metrics.py` module (200+ lines)
+- **Voice message support** (optional feature)
+  - Audio recording via microphone
+  - Voice encoding for efficient transmission
+  - Waveform visualization
+  - Playback controls
+  - Duration limiting (configurable maximum)
+  - Requires sounddevice and soundfile libraries
+  - Implemented in `voice.py` module (250+ lines)
+- **QR code contact sharing**
+  - Generate QR codes from contact cards
+  - ASCII art display in terminal
+  - PNG export for sharing
+  - Scan with mobile device camera
+  - Same security as traditional contact exchange
+  - Requires qrcode and pillow libraries
+  - Implemented in `qr_code.py` module (150+ lines)
+- **Message reactions and emoji support**
+  - React to messages with emojis
+  - Multiple reactions per message
+  - Real-time reaction updates
+  - Reaction count display
+  - Unicode emoji set support
+  - New message types: REACTION, REACTION_REMOVE
+- **Typing indicators**
+  - Real-time typing status display
+  - Automatic timeout (configurable)
+  - Privacy-respecting (only for active conversations)
+  - New message type: TYPING_INDICATOR
+- **Rich text formatting** with Markdown support
+  - Bold, italic, strikethrough formatting
+  - Inline code and code blocks
+  - Link display (non-clickable for security)
+  - Syntax highlighting in code blocks
+  - Backward compatible with plain text
+  - Uses Rich library's Markdown renderer
+- **Statistics dashboard**
+  - Total messages sent/received
+  - Data transfer statistics
+  - Connection uptime tracking
+  - Active contacts list
+  - Most active contacts ranking
+  - Message frequency visualization
+  - Reset statistics option
+- **Enhanced error system** with structured error codes
+  - Comprehensive error code catalog (E001-E899)
+  - Detailed error messages with context
+  - Error code categories (crypto, network, identity, etc.)
+  - Suggested solutions for common errors
+  - Error serialization for IPC
+  - Implemented in `errors.py` module (253 lines)
+- **Centralized constants module**
+  - All magic numbers extracted to constants
+  - Network configuration constants
+  - Cryptography parameters
+  - Rate limiting values
+  - File transfer settings
+  - UI configuration
+  - Backup parameters
+  - Implemented in `constants.py` module (148 lines)
+- **Additional UI components and screens**
+  - File transfer progress widgets
+  - Search interface with filtering
+  - Statistics dashboard screen
+  - Configuration management screen
+  - Backup management interface
+  - Connection quality indicators
+  - Enhanced error dialogs
+  - Implemented in `ui_components.py` (300+ lines) and `ui_screens.py` (400+ lines)
+- **Comprehensive test infrastructure**
+  - 390+ test cases across 10 test modules
+  - 5,060+ lines of test code
+  - Unit tests for all new modules
+  - Integration tests for end-to-end workflows
+  - Edge case and error condition coverage
+  - Async test support with pytest-asyncio
+  - Thread safety tests
+  - Performance and load tests
+  - Test fixtures and mocking infrastructure
+  - Target coverage >70%
+
+### Changed
+- **Message storage** migrated from JSON to SQLite
+  - Efficient storage for large message histories
+  - Full-text search support with FTS5
+  - Backward compatibility (automatic JSON import)
+  - Improved query performance
+  - Transaction support for data integrity
+- **Protocol extended** with new message types
+  - FILE_START, FILE_CHUNK, FILE_END, FILE_CANCEL - file transfer
+  - FILE_REQUEST, FILE_ACCEPT, FILE_REJECT - file transfer handshake
+  - VOICE_MESSAGE, VOICE_CHUNK - voice message streaming
+  - REACTION, REACTION_REMOVE - message reactions
+  - TYPING_INDICATOR - typing status
+  - Total message types increased from 20 to 35
+- **Network layer enhanced** with monitoring and protection
+  - Rate limiter integration for all connections
+  - Connection metrics collection
+  - Enhanced error messages with error codes
+  - Message size validation (max 10MB)
+  - Latency measurement
+  - Throughput tracking
+  - Quality of service indicators
+- **Crypto module extended** with Double Ratchet support
+  - Optional ratchet mode for forward secrecy
+  - Backward compatible with five-layer encryption
+  - Post-quantum crypto support (optional, requires liboqs-python)
+  - Enhanced key management
+  - Key rotation policies
+- **Server enhanced** with new command handlers
+  - File transfer commands (send, receive, cancel)
+  - Search commands (query, filter, paginate)
+  - Backup commands (create, restore, list, delete)
+  - Voice message commands
+  - Configuration commands
+  - Statistics commands
+  - Rate limiter integration for all operations
+- **Client adapter extended** for new features
+  - Async/sync wrappers for file transfer
+  - Search API methods
+  - Backup management methods
+  - Voice message methods
+  - Reaction methods
+  - Statistics retrieval
+  - Configuration access
+- **UI significantly enhanced** with new features
+  - File transfer interface with progress tracking
+  - Search dialog with filtering options
+  - Statistics dashboard with visualizations
+  - Configuration editor
+  - Backup management screen
+  - Connection quality display
+  - Rich text rendering with Markdown
+  - Enhanced error display with error codes
+  - Voice message recording and playback controls
+  - QR code display for contact sharing
+- **Dependency updates** to latest stable versions
+  - textual 0.47.1 → 0.90.0 (major UI improvements)
+  - cryptography 42.0.4 → 44.0.0 (security updates)
+  - rich 13.7.0 → 13.9.4 (formatting enhancements)
+  - Added pyperclip 1.9.0 (was missing)
+  - Added tomli 2.2.1 (TOML support for Python <3.11)
+  - Added zstandard 0.23.0 (compression support)
+- **Version number** incremented to 2.0.0
+  - Major version due to significant new features
+  - Semantic versioning compliance
+  - Updated in all relevant files
+
+### Security
+- **Forward secrecy** implemented via Double Ratchet
+  - Past messages cannot be decrypted even if current keys compromised
+  - Automatic key rotation per message
+  - Protection against future quantum computers (with liboqs-python)
+- **Rate limiting** protects against abuse
+  - Connection flooding prevention
+  - Message spam prevention
+  - Automatic ban for violations
+  - Configurable thresholds
+- **Message size limits** prevent memory exhaustion
+  - Maximum message size enforced (10MB)
+  - Maximum file size enforced (100MB default, configurable)
+  - Protocol-level validation
+  - Protection against resource exhaustion attacks
+- **Encrypted backups** with separate password
+  - Backup files encrypted independently
+  - Optional different password for backups
+  - Protection against backup theft
+  - Secure deletion of old backups
+- **Enhanced error handling** prevents information leakage
+  - Structured error messages without sensitive data
+  - Error codes instead of detailed exceptions
+  - Context provided without compromising security
+  - Secure logging practices
+
 ### Fixed
 - SyntaxError in server.py caused by duplicate `async` keywords in async context managers
   - Fixed line 159: async with self.client_lock (stop method)

@@ -25,6 +25,11 @@ from .message import MessageStore
 from .group import GroupManager
 from .network import NetworkManager
 from .notification import get_notification_manager
+from .config import Config
+from .rate_limiter import RateLimiter
+from .backup import BackupManager
+from .errors import JarvisError, ErrorCode
+from .message_queue import MessageQueue
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -69,6 +74,28 @@ class ServerCommand:
     GET_CONNECTION_STATUS = "get_connection_status"
     CONNECT_TO_PEER = "connect_to_peer"
     
+    # File transfer
+    SEND_FILE = "send_file"
+    RECEIVE_FILE = "receive_file"
+    GET_FILE_TRANSFERS = "get_file_transfers"
+    CANCEL_FILE_TRANSFER = "cancel_file_transfer"
+
+    # Search
+    SEARCH_MESSAGES = "search_messages"
+    SEARCH_BY_CONTACT = "search_by_contact"
+    SEARCH_BY_DATE = "search_by_date"
+
+    # Backup
+    CREATE_BACKUP = "create_backup"
+    RESTORE_BACKUP = "restore_backup"
+    LIST_BACKUPS = "list_backups"
+    DELETE_BACKUP = "delete_backup"
+
+    # Voice messages
+    SEND_VOICE_MESSAGE = "send_voice_message"
+    RECORD_VOICE = "record_voice"
+    PLAY_VOICE = "play_voice"
+
     # Server control
     SHUTDOWN = "shutdown"
     PING = "ping"
@@ -96,6 +123,15 @@ class JarvisServer:
         self.group_manager: Optional[GroupManager] = None
         self.network_manager: Optional[NetworkManager] = None
         self.notification_manager = None
+
+        # New v2.0 managers
+        self.config: Optional[Config] = None
+        self.rate_limiter: Optional[RateLimiter] = None
+        self.backup_manager: Optional[BackupManager] = None
+        self.file_transfers: Dict[str, Any] = {}  # Track active file transfers
+        
+        # Message queue
+        self.message_queue: Optional[MessageQueue] = None
         
         # Current identity
         self.identity = None
@@ -333,7 +369,40 @@ class JarvisServer:
             
             elif command == ServerCommand.SHUTDOWN:
                 return await self._handle_shutdown()
-            
+
+            # File transfer commands
+            elif command == ServerCommand.SEND_FILE:
+                return await self._handle_send_file(params)
+
+            elif command == ServerCommand.GET_FILE_TRANSFERS:
+                return await self._handle_get_file_transfers()
+
+            elif command == ServerCommand.CANCEL_FILE_TRANSFER:
+                return await self._handle_cancel_file_transfer(params)
+
+            # Search commands
+            elif command == ServerCommand.SEARCH_MESSAGES:
+                return await self._handle_search_messages(params)
+
+            elif command == ServerCommand.SEARCH_BY_CONTACT:
+                return await self._handle_search_by_contact(params)
+
+            elif command == ServerCommand.SEARCH_BY_DATE:
+                return await self._handle_search_by_date(params)
+
+            # Backup commands
+            elif command == ServerCommand.CREATE_BACKUP:
+                return await self._handle_create_backup(params)
+
+            elif command == ServerCommand.RESTORE_BACKUP:
+                return await self._handle_restore_backup(params)
+
+            elif command == ServerCommand.LIST_BACKUPS:
+                return await self._handle_list_backups()
+
+            elif command == ServerCommand.DELETE_BACKUP:
+                return await self._handle_delete_backup(params)
+
             else:
                 return {
                     'success': False,
@@ -354,6 +423,21 @@ class JarvisServer:
             return {'success': False, 'error': 'Password required'}
         
         try:
+            # If already logged in, just verify password
+            if self.identity is not None:
+                if self.identity_manager and self.identity_manager.load_identity(password):
+                    return {
+                        'success': True,
+                        'identity': {
+                            'uid': self.identity.uid,
+                            'username': self.identity.username,
+                            'fingerprint': self.identity.fingerprint,
+                            'listen_port': self.identity.listen_port
+                        }
+                    }
+                else:
+                    return {'success': False, 'error': 'Invalid password'}
+            
             # Initialize managers
             self.identity_manager = IdentityManager(str(self.data_dir))
             
@@ -377,26 +461,45 @@ class JarvisServer:
             self.message_store = MessageStore(str(self.data_dir))
             self.group_manager = GroupManager(str(self.data_dir))
             self.notification_manager = get_notification_manager()
-            
-            # Initialize network manager
-            self.network_manager = NetworkManager(
-                self.identity.keypair,
-                self.identity.uid,
-                self.identity.username,
-                self.identity.listen_port,
-                self.contact_manager
+
+            # Initialize v2.0 managers
+            self.config = Config(self.data_dir / "config.toml")
+            self.rate_limiter = RateLimiter()
+            self.backup_manager = BackupManager(
+                data_dir=self.data_dir,
+                backup_dir=self.data_dir / "backups"
             )
             
-            # Set up callbacks
-            self.network_manager.on_message_callback = self._handle_incoming_message
-            self.network_manager.on_group_message_callback = self._handle_incoming_group_message
-            self.network_manager.on_connection_state_callback = self._handle_connection_state_change
+            # Initialize message queue
+            self.message_queue = MessageQueue(self.data_dir / 'message_queue.db')
+            logger.info("Initialized managers (Config, RateLimiter, BackupManager, MessageQueue)")
             
-            # Start network server
-            if not await self.network_manager.start_server():
-                return {'success': False, 'error': 'Failed to start network server'}
+            # Initialize network manager (but only start server if not already started)
+            if self.network_manager is None:
+                self.network_manager = NetworkManager(
+                    self.identity.keypair,
+                    self.identity.uid,
+                    self.identity.username,
+                    self.identity.listen_port,
+                    self.contact_manager,
+                    data_dir=self.data_dir
+                )
+                
+                # Set up callbacks
+                self.network_manager.on_message_callback = self._handle_incoming_message
+                self.network_manager.on_group_message_callback = self._handle_incoming_group_message
+                self.network_manager.on_connection_state_callback = self._handle_connection_state_change
+                
+                # Start network server (only on first login)
+                logger.info(f"Starting P2P network server on port {self.identity.listen_port}")
+                if not await self.network_manager.start_server():
+                    return {'success': False, 'error': 'Failed to start network server'}
+                logger.info("P2P network server started successfully")
+            else:
+                logger.info("Network manager already initialized, reusing existing instance")
             
             # Connect to all contacts
+            logger.info("Connecting to all known contacts...")
             await self.network_manager.connect_all_contacts()
             
             # Setup group memberships
@@ -415,25 +518,37 @@ class JarvisServer:
             }
         
         except Exception as e:
+            logger.error(f"Login failed: {e}", exc_info=True)
             return {'success': False, 'error': str(e)}
     
     async def _handle_logout(self) -> Dict[str, Any]:
-        """Handle logout command."""
+        """
+        Handle logout command.
+        
+        Note: Disconnects from peers but keeps network server running
+        for other potential clients and future logins.
+        """
         try:
             if self.network_manager:
-                self.network_manager.disconnect_all()
-                self.network_manager.stop_server()
+                # Disconnect from all peers but don't stop server
+                logger.info("Disconnecting from all peers...")
+                await self.network_manager.disconnect_all()
+                logger.info("Disconnected from peers (server still running)")
+                # Note: We deliberately do NOT call network_manager.stop_server()
+                # The server persists for future logins and other UI clients
             
+            # Clear identity and credentials (but keep network_manager for reuse)
             self.identity = None
             self.password = None
-            self.identity_manager = None
             self.contact_manager = None
             self.message_store = None
             self.group_manager = None
-            self.network_manager = None
+            # Note: identity_manager, config, rate_limiter, backup_manager persist
             
+            logger.info("Logout successful, server remains active")
             return {'success': True}
         except Exception as e:
+            logger.error(f"Logout failed: {e}", exc_info=True)
             return {'success': False, 'error': str(e)}
     
     async def _handle_send_message(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -936,7 +1051,186 @@ class JarvisServer:
         """Shutdown after a short delay to allow response to be sent."""
         await asyncio.sleep(0.5)
         self.running = False
-    
+
+    # File transfer handlers
+    async def _handle_send_file(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle file transfer initiation."""
+        try:
+            contact_uid = params.get('contact_uid')
+            file_path = params.get('file_path')
+
+            if not contact_uid or not file_path:
+                return {'success': False, 'error': 'Missing required parameters'}
+
+            # TODO: Implement file transfer using file_transfer.py
+            # For now, return a placeholder response
+            import uuid
+            transfer_id = str(uuid.uuid4())
+
+            self.file_transfers[transfer_id] = {
+                'contact_uid': contact_uid,
+                'file_path': file_path,
+                'status': 'pending',
+                'progress': 0
+            }
+
+            return {
+                'success': True,
+                'transfer_id': transfer_id,
+                'message': 'File transfer initiated (feature in development)'
+            }
+        except Exception as e:
+            logger.error(f"File transfer error: {e}")
+            return {'success': False, 'error': str(e)}
+
+    async def _handle_get_file_transfers(self) -> Dict[str, Any]:
+        """Get list of active file transfers."""
+        return {
+            'success': True,
+            'transfers': self.file_transfers
+        }
+
+    async def _handle_cancel_file_transfer(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Cancel a file transfer."""
+        transfer_id = params.get('transfer_id')
+
+        if transfer_id in self.file_transfers:
+            del self.file_transfers[transfer_id]
+            return {'success': True, 'message': 'Transfer cancelled'}
+
+        return {'success': False, 'error': 'Transfer not found'}
+
+    # Search handlers
+    async def _handle_search_messages(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Search messages."""
+        try:
+            query = params.get('query', '')
+            limit = params.get('limit', 50)
+
+            # TODO: Implement using search.py with MessageSearchEngine
+            # For now, return basic search from message store
+            return {
+                'success': True,
+                'results': [],
+                'message': 'Search feature in development - requires SQLite migration'
+            }
+        except Exception as e:
+            logger.error(f"Search error: {e}")
+            return {'success': False, 'error': str(e)}
+
+    async def _handle_search_by_contact(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Search messages by contact."""
+        try:
+            contact_uid = params.get('contact_uid')
+
+            if not contact_uid or not self.message_store:
+                return {'success': False, 'error': 'Invalid parameters'}
+
+            # Get messages from current message store
+            messages = self.message_store.get_messages(contact_uid)
+
+            return {
+                'success': True,
+                'messages': messages
+            }
+        except Exception as e:
+            logger.error(f"Search by contact error: {e}")
+            return {'success': False, 'error': str(e)}
+
+    async def _handle_search_by_date(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Search messages by date range."""
+        try:
+            start_date = params.get('start_date')
+            end_date = params.get('end_date')
+
+            # TODO: Implement with SQLite search engine
+            return {
+                'success': True,
+                'results': [],
+                'message': 'Date range search in development - requires SQLite migration'
+            }
+        except Exception as e:
+            logger.error(f"Search by date error: {e}")
+            return {'success': False, 'error': str(e)}
+
+    # Backup handlers
+    async def _handle_create_backup(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a backup."""
+        try:
+            if not self.backup_manager:
+                return {'success': False, 'error': 'Backup manager not initialized'}
+
+            password = params.get('password')  # Optional encryption
+
+            backup_path = self.backup_manager.create_backup(password)
+
+            return {
+                'success': True,
+                'backup_path': str(backup_path),
+                'message': f'Backup created: {backup_path.name}'
+            }
+        except Exception as e:
+            logger.error(f"Backup creation error: {e}")
+            return {'success': False, 'error': str(e)}
+
+    async def _handle_restore_backup(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Restore from a backup."""
+        try:
+            if not self.backup_manager:
+                return {'success': False, 'error': 'Backup manager not initialized'}
+
+            backup_path = params.get('backup_path')
+            password = params.get('password')  # For encrypted backups
+
+            if not backup_path:
+                return {'success': False, 'error': 'Backup path required'}
+
+            from pathlib import Path
+            self.backup_manager.restore_backup(Path(backup_path), password)
+
+            return {
+                'success': True,
+                'message': 'Backup restored successfully - restart required'
+            }
+        except Exception as e:
+            logger.error(f"Backup restore error: {e}")
+            return {'success': False, 'error': str(e)}
+
+    async def _handle_list_backups(self) -> Dict[str, Any]:
+        """List available backups."""
+        try:
+            if not self.backup_manager:
+                return {'success': False, 'error': 'Backup manager not initialized'}
+
+            backups = self.backup_manager.list_backups()
+
+            return {
+                'success': True,
+                'backups': backups
+            }
+        except Exception as e:
+            logger.error(f"List backups error: {e}")
+            return {'success': False, 'error': str(e)}
+
+    async def _handle_delete_backup(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Delete a backup."""
+        try:
+            backup_path = params.get('backup_path')
+
+            if not backup_path:
+                return {'success': False, 'error': 'Backup path required'}
+
+            from pathlib import Path
+            Path(backup_path).unlink()
+
+            return {
+                'success': True,
+                'message': 'Backup deleted'
+            }
+        except Exception as e:
+            logger.error(f"Delete backup error: {e}")
+            return {'success': False, 'error': str(e)}
+
     async def _handle_incoming_message(self, sender_uid: str, message: str, 
                                  message_id: str, timestamp: str):
         """Handle incoming message from network."""

@@ -488,3 +488,110 @@ class ServerManagedGroupManager:
     def get_all_groups(self) -> List[Group]:
         """Get all groups (sync wrapper)."""
         return self._run_async(self.get_all_groups_async())
+
+    # File Transfer Methods (v2.0)
+
+    async def send_file_async(self, contact_uid: str, file_path: str) -> Dict:
+        """Send file to contact (async)."""
+        return await self.client.send_command('send_file', {
+            'contact_uid': contact_uid,
+            'file_path': file_path
+        })
+
+    def send_file(self, contact_uid: str, file_path: str) -> Dict:
+        """Send file to contact (sync wrapper)."""
+        return self._run_async(self.send_file_async(contact_uid, file_path))
+
+    async def get_file_transfers_async(self) -> Dict:
+        """Get active file transfers (async)."""
+        return await self.client.send_command('get_file_transfers', {})
+
+    def get_file_transfers(self) -> Dict:
+        """Get active file transfers (sync wrapper)."""
+        return self._run_async(self.get_file_transfers_async())
+
+    async def cancel_file_transfer_async(self, transfer_id: str) -> Dict:
+        """Cancel file transfer (async)."""
+        return await self.client.send_command('cancel_file_transfer', {
+            'transfer_id': transfer_id
+        })
+
+    def cancel_file_transfer(self, transfer_id: str) -> Dict:
+        """Cancel file transfer (sync wrapper)."""
+        return self._run_async(self.cancel_file_transfer_async(transfer_id))
+
+    # Search Methods (v2.0)
+
+    async def search_messages_async(self, query: str, limit: int = 50) -> Dict:
+        """Search messages (async)."""
+        return await self.client.send_command('search_messages', {
+            'query': query,
+            'limit': limit
+        })
+
+    def search_messages(self, query: str, limit: int = 50) -> Dict:
+        """Search messages (sync wrapper)."""
+        return self._run_async(self.search_messages_async(query, limit))
+
+    async def search_by_contact_async(self, contact_uid: str) -> Dict:
+        """Search messages by contact (async)."""
+        return await self.client.send_command('search_by_contact', {
+            'contact_uid': contact_uid
+        })
+
+    def search_by_contact(self, contact_uid: str) -> Dict:
+        """Search messages by contact (sync wrapper)."""
+        return self._run_async(self.search_by_contact_async(contact_uid))
+
+    async def search_by_date_async(self, start_date: int, end_date: int) -> Dict:
+        """Search messages by date range (async)."""
+        return await self.client.send_command('search_by_date', {
+            'start_date': start_date,
+            'end_date': end_date
+        })
+
+    def search_by_date(self, start_date: int, end_date: int) -> Dict:
+        """Search messages by date range (sync wrapper)."""
+        return self._run_async(self.search_by_date_async(start_date, end_date))
+
+    # Backup Methods (v2.0)
+
+    async def create_backup_async(self, password: Optional[str] = None) -> Dict:
+        """Create backup (async)."""
+        params = {}
+        if password:
+            params['password'] = password
+        return await self.client.send_command('create_backup', params)
+
+    def create_backup(self, password: Optional[str] = None) -> Dict:
+        """Create backup (sync wrapper)."""
+        return self._run_async(self.create_backup_async(password))
+
+    async def restore_backup_async(self, backup_path: str, password: Optional[str] = None) -> Dict:
+        """Restore from backup (async)."""
+        params = {'backup_path': backup_path}
+        if password:
+            params['password'] = password
+        return await self.client.send_command('restore_backup', params)
+
+    def restore_backup(self, backup_path: str, password: Optional[str] = None) -> Dict:
+        """Restore from backup (sync wrapper)."""
+        return self._run_async(self.restore_backup_async(backup_path, password))
+
+    async def list_backups_async(self) -> Dict:
+        """List available backups (async)."""
+        return await self.client.send_command('list_backups', {})
+
+    def list_backups(self) -> Dict:
+        """List available backups (sync wrapper)."""
+        return self._run_async(self.list_backups_async())
+
+    async def delete_backup_async(self, backup_path: str) -> Dict:
+        """Delete a backup (async)."""
+        return await self.client.send_command('delete_backup', {
+            'backup_path': backup_path
+        })
+
+    def delete_backup(self, backup_path: str) -> Dict:
+        """Delete a backup (sync wrapper)."""
+        return self._run_async(self.delete_backup_async(backup_path))

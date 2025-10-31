@@ -1,5 +1,33 @@
-textual==0.47.1
-cryptography==42.0.4
-argon2-cffi==23.1.0
-rich==13.7.0
-pyperclip==1.8.2
+# Jarvis Messenger v2.1.0 - Requirements
+# All dependencies are FOSS and actively maintained
+
+# Core UI Framework
+textual>=0.90.0
+
+# Cryptography
+cryptography>=44.0.0
+argon2-cffi>=23.1.0
+liboqs-python>=0.11.0
+
+# Terminal and Display
+rich>=13.9.4
+pyperclip>=1.9.0
+qrcode>=8.0
+pillow>=10.0.0
+
+# Configuration and Data
+tomli>=2.2.1; python_version < '3.11'
+zstandard>=0.23.0
+
+# Audio (Voice Messages)
+sounddevice>=0.5.1
+soundfile>=0.12.1
+
+# Internet Connectivity (v2.1.0)
+miniupnpc>=2.2.4
+pystun3>=1.0.0
+zeroconf>=0.131.0
+
+# Utilities
+validators>=0.22.0
+aiofiles>=23.2.1
