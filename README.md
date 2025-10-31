@@ -112,6 +112,11 @@ Your conversations remain completely under your control.
 
 *   **Terminal UI:** Beautiful terminal interface using Textual framework
 *   **Colorful Display:** Rich colors and formatting for easy reading
+    *   **Color Palette:** Red, white, black, grey, purple, cyan, amber
+    *   Status indicator colors: green (all connected), amber (partial), red (none), grey (offline)
+    *   Banner colors: white, red, bright white, dark red, purple, grey with cyan accents
+    *   Informational elements and links highlighted in cyan
+    *   See [docs/COLORS.md](docs/COLORS.md) for complete color usage documentation
 *   **Animated ASCII Banner:** An animated ASCII art banner that cycles through a gradient of colors
 *   **Full-Text Search:** Instant search across all messages with filtering (Ctrl+F)
 *   **Statistics Dashboard:** View message counts, transfer stats, and activity (Ctrl+T)
@@ -149,8 +154,8 @@ The application features a terminal-based UI with real-time connection status, m
 
 ```bash
 # Install from source
-git clone https://github.com/orpheus497/jarvis.git
-cd jarvis
+git clone https://github.com/orpheus497/jarvisapp.git
+cd jarvisapp
 pip install .
 
 # Run
@@ -439,17 +444,40 @@ Group messages are encrypted individually for each member and transmitted peer-t
 
 ## Networking
 
+### Automatic NAT Traversal
+
+Jarvis includes built-in NAT traversal capabilities that handle internet connectivity automatically:
+
+*   **UPnP IGD**: Automatic port mapping on compatible routers
+*   **STUN Protocol**: Public IP address discovery without external web services
+*   **NAT Type Detection**: Identifies your network topology (7 types supported)
+*   **Connection Strategy**: Selects optimal connection method based on your network
+
+These features work automatically when you start Jarvis - no manual configuration required for most networks.
+
 ### Port Forwarding
 
-For contacts to reach you from the Internet, you may need to configure port forwarding on your router:
+For networks without UPnP support, you may need to configure port forwarding on your router:
 
 1.  Choose a port (default: 5000)
 2.  Configure your router to forward that port to your computer's local IP
-3.  Share your **public IP address** and port with contacts
+3.  Share your public IP address and port with contacts
 
 **Finding Your Public IP:**
+
+Use the built-in STUN discovery (automatic when Jarvis starts), or check locally:
+
+**Linux/macOS:**
 ```bash
-curl ifconfig.me
+# View network interfaces and addresses
+ip addr show    # Linux
+ifconfig        # macOS
+```
+
+**Windows:**
+```powershell
+# View network interfaces and addresses
+ipconfig
 ```
 
 ### Firewall
@@ -625,28 +653,30 @@ This project was designed and originated by **orpheus497**.
 
 ### Dependencies
 
-Jarvis relies on the following open-source projects, and we are grateful to their creators and maintainers:
+Jarvis relies on the following open-source projects, and we are grateful to their creators and maintainers.
+
+For a complete list of all dependencies, their licenses, and upstream links, see [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
 
 All dependencies are included and installed automatically:
 
 **Core Libraries:**
-*   **textual** - Terminal UI framework
-*   **cryptography** - Cryptographic primitives
-*   **argon2-cffi** - Password hashing
-*   **rich** - Terminal formatting
-*   **pyperclip** - Clipboard support
-*   **tomli** - TOML parser (Python <3.11)
-*   **zstandard** - Compression
-*   **liboqs-python** - Post-quantum cryptography
-*   **qrcode** & **pillow** - QR code generation
-*   **sounddevice** & **soundfile** - Voice messages
+*   **textual** - Terminal UI framework (MIT)
+*   **cryptography** - Cryptographic primitives (Apache-2.0 / BSD-3-Clause)
+*   **argon2-cffi** - Password hashing (MIT)
+*   **rich** - Terminal formatting (MIT)
+*   **pyperclip** - Clipboard support (BSD-3-Clause)
+*   **tomli** - TOML parser for Python <3.11 (MIT)
+*   **zstandard** - Compression (BSD-3-Clause)
+*   **liboqs-python** - Post-quantum cryptography (MIT)
+*   **qrcode** & **pillow** - QR code generation (BSD-3-Clause, HPND/PIL)
+*   **sounddevice** & **soundfile** - Voice messages (MIT, BSD-3-Clause)
 
 **Internet Connectivity:**
-*   **miniupnpc** - UPnP IGD port mapping (BSD 3-Clause)
+*   **miniupnpc** - UPnP IGD port mapping (BSD-3-Clause)
 *   **pystun3** - STUN protocol client (MIT)
-*   **zeroconf** - mDNS/DNS-SD peer discovery (LGPL 2.1)
+*   **zeroconf** - mDNS/DNS-SD peer discovery (LGPL-2.1)
 *   **validators** - Input validation (MIT)
-*   **aiofiles** - Async file I/O (Apache 2.0)
+*   **aiofiles** - Async file I/O (Apache-2.0)
 
 ### Standards and Protocols
 

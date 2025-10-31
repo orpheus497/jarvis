@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- README installation instructions now reference correct repository name (jarvisapp instead of jarvis)
+- Repository clone path corrected from `orpheus497/jarvis` to `orpheus497/jarvisapp`
+- pyproject.toml project URLs now point to jarvisapp repository
+- README networking section removed external IP discovery via curl ifconfig.me
+- Markdown formatting standardized across README sections
+
+### Added
+- Complete UI color palette documentation including red, white, black, grey, purple, cyan, and amber
+- docs/COLORS.md with detailed color usage across status indicators, banners, messages, and actions
+- docs/DEPENDENCIES.md with comprehensive FOSS dependency attributions, licenses, and upstream links
+- Link to docs/COLORS.md in README Interface section
+- Link to docs/DEPENDENCIES.md in README Acknowledgements section
+- License information for all dependencies in README
+
+### Changed
+- README networking guidance now emphasizes built-in NAT traversal (UPnP/STUN) and local OS tools
+- README Interface section explicitly documents complete color palette with usage descriptions
+- README Acknowledgements section references centralized dependency documentation
+- Networking section reorganized with automatic NAT traversal as primary method
+
 ## [2.1.0] - 2025-10-31
 
 ### Fixed

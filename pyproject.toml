@@ -49,11 +49,11 @@ dependencies = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/orpheus497/jarvis"
-"Bug Reports" = "https://github.com/orpheus497/jarvis/issues"
-"Source" = "https://github.com/orpheus497/jarvis"
-"Changelog" = "https://github.com/orpheus497/jarvis/blob/main/CHANGELOG.md"
-"Documentation" = "https://github.com/orpheus497/jarvis/blob/main/README.md"
+"Homepage" = "https://github.com/orpheus497/jarvisapp"
+"Bug Reports" = "https://github.com/orpheus497/jarvisapp/issues"
+"Source" = "https://github.com/orpheus497/jarvisapp"
+"Changelog" = "https://github.com/orpheus497/jarvisapp/blob/main/CHANGELOG.md"
+"Documentation" = "https://github.com/orpheus497/jarvisapp/blob/main/README.md"
 
 [project.scripts]
 jarvis = "jarvis.__main__:main"
