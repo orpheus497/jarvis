@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **CRITICAL:** Silent exception handling in contact persistence (contact.py:95-96, 104-105) preventing error detection and causing potential data loss
+- **CRITICAL:** Silent exception handling in message persistence (message.py:124-125, 141-142) preventing error detection and causing potential data loss
+- **CRITICAL:** Silent exception handling in group persistence (group.py:149-150, 158-159) preventing error detection and causing potential data loss
+- All file I/O operations now use UTF-8 encoding explicitly to prevent character encoding issues across platforms
+- All save operations now use atomic file writes (write to temporary file then rename) to prevent data corruption during crashes or interruptions
+- Corrupted JSON files in persistence layer now handled gracefully (logs warning and continues) instead of crashing
 - README installation instructions now reference correct repository name (jarvisapp instead of jarvis)
 - Repository clone path corrected from `orpheus497/jarvis` to `orpheus497/jarvisapp`
 - pyproject.toml project URLs now point to jarvisapp repository
@@ -15,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Markdown formatting standardized across README sections
 
 ### Added
+- Async file I/O methods using aiofiles library for non-blocking persistence operations in contact.py, message.py, and group.py
+- Comprehensive error logging throughout contact, message, and group management modules with info, debug, and error levels
+- Specific exception handling (IOError, OSError, JSONDecodeError) replacing broad exception catching to prevent masking critical errors
+- Type hints added to all public methods in contact.py, message.py, and group.py (return types, parameter types) for improved IDE support and type safety
+- Logging statements throughout persistence layer providing visibility into save operations, load operations, and error conditions
+- Message and contact deletion operations now log counts of items deleted for auditability
+- Contact manager now provides both async and sync versions of save methods (save_contacts_async, mark_online_async, mark_offline_async)
+- Message store now provides both async and sync versions of save methods (save_messages_async)
+- Group manager save operations enhanced with detailed logging
 - Complete UI color palette documentation including red, white, black, grey, purple, cyan, and amber
 - docs/COLORS.md with detailed color usage across status indicators, banners, messages, and actions
 - docs/DEPENDENCIES.md with comprehensive FOSS dependency attributions, licenses, and upstream links
@@ -23,10 +38,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - License information for all dependencies in README
 
 ### Changed
+- All persistence save methods now use atomic file writes (temp file + rename) for data safety and crash resistance
+- Contact manager save operations now available in both synchronous and asynchronous versions for compatibility
+- Message store save operations now available in both synchronous and asynchronous versions for compatibility
+- All file operations now include proper error handling with specific exception types and error logging
+- Error messages now provide actionable context and stack traces instead of silent failures
+- File load operations now handle corrupted JSON gracefully by logging warning and starting with empty data instead of crashing application
 - README networking guidance now emphasizes built-in NAT traversal (UPnP/STUN) and local OS tools
 - README Interface section explicitly documents complete color palette with usage descriptions
 - README Acknowledgements section references centralized dependency documentation
 - Networking section reorganized with automatic NAT traversal as primary method
+
+### Security
+- Data persistence operations now use atomic file writes to prevent corruption during crashes or interruptions
+- Proper exception handling prevents information leakage through uncontrolled error messages
+- All file I/O operations validate and handle errors before proceeding to prevent undefined behavior
+- UTF-8 encoding explicitly specified to prevent encoding-based injection attacks
 
 ## [2.1.0] - 2025-10-31
 

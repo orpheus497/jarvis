@@ -10,9 +10,14 @@ direct messages and group chats.
 import json
 import os
 import uuid
+import logging
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
+
+import aiofiles
+
+logger = logging.getLogger(__name__)
 
 # Import search engine for SQLite support (optional)
 try:
@@ -25,10 +30,10 @@ except ImportError:
 
 class Message:
     """Represents a message in a conversation."""
-    
+
     def __init__(self, contact_uid: str, content: str, sent_by_me: bool,
                  timestamp: Optional[str] = None, message_id: Optional[str] = None,
-                 delivered: bool = False, read: bool = False, 
+                 delivered: bool = False, read: bool = False,
                  group_id: Optional[str] = None, sender_uid: Optional[str] = None):
         self.message_id = message_id or str(uuid.uuid4())
         self.contact_uid = contact_uid  # For direct messages
@@ -38,12 +43,12 @@ class Message:
         self.delivered = delivered
         self.read = read
         self.encrypted = True
-        
+
         # Group chat specific fields
         self.group_id = group_id
         self.sender_uid = sender_uid  # UID of the actual sender in group chat
-    
-    def to_dict(self) -> Dict:
+
+    def to_dict(self) -> Dict[str, Any]:
         """Convert message to dictionary for storage."""
         return {
             'message_id': self.message_id,
@@ -57,9 +62,9 @@ class Message:
             'group_id': self.group_id,
             'sender_uid': self.sender_uid
         }
-    
+
     @staticmethod
-    def from_dict(data: Dict) -> 'Message':
+    def from_dict(data: Dict[str, Any]) -> 'Message':
         """Create message from dictionary."""
         msg = Message(
             contact_uid=data['contact_uid'],
@@ -74,15 +79,15 @@ class Message:
         )
         msg.encrypted = data.get('encrypted', True)
         return msg
-    
-    def mark_delivered(self):
+
+    def mark_delivered(self) -> None:
         """Mark message as delivered."""
         self.delivered = True
-    
-    def mark_read(self):
+
+    def mark_read(self) -> None:
         """Mark message as read."""
         self.read = True
-    
+
     def is_group_message(self) -> bool:
         """Check if this is a group message."""
         return self.group_id is not None
@@ -113,24 +118,41 @@ class MessageStore:
             self.search_engine = MessageSearchEngine(db_path)
 
         self._load_messages()
-    
-    def _load_messages(self):
+
+    def _load_messages(self) -> None:
         """Load messages from file."""
         if os.path.exists(self.messages_file):
             try:
-                with open(self.messages_file, 'r') as f:
+                with open(self.messages_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 self.messages = [Message.from_dict(msg_data) for msg_data in data]
+                logger.info(f"Loaded {len(self.messages)} messages from {self.messages_file}")
+            except (IOError, OSError) as e:
+                logger.error(f"Failed to read messages file: {e}")
+                raise IOError(f"Cannot load messages: {e}") from e
+            except json.JSONDecodeError as e:
+                logger.error(f"Corrupted messages file: {e}")
+                # Don't raise - start with empty messages if file is corrupted
+                logger.warning("Starting with empty messages due to corrupted file")
             except Exception as e:
-                pass
-    
-    def save_messages(self):
-        """Save messages to file and optionally to SQLite."""
+                logger.error(f"Unexpected error loading messages: {e}")
+                raise
+
+    async def save_messages_async(self) -> None:
+        """Save messages to file asynchronously and optionally to SQLite."""
         try:
             # Always save to JSON for backward compatibility
             data = [msg.to_dict() for msg in self.messages]
-            with open(self.messages_file, 'w') as f:
-                json.dump(data, f, indent=2)
+            json_data = json.dumps(data, indent=2, ensure_ascii=False)
+
+            # Write to temporary file first
+            temp_file = f"{self.messages_file}.tmp"
+            async with aiofiles.open(temp_file, 'w', encoding='utf-8') as f:
+                await f.write(json_data)
+
+            # Atomic rename
+            os.replace(temp_file, self.messages_file)
+            logger.debug(f"Saved {len(self.messages)} messages to {self.messages_file}")
 
             # Also save to SQLite if enabled
             if self.use_sqlite and self.search_engine:
@@ -138,12 +160,46 @@ class MessageStore:
                 for msg in self.messages:
                     self._index_message_in_search(msg)
 
+        except (IOError, OSError) as e:
+            logger.error(f"Failed to save messages: {e}")
+            raise IOError(f"Cannot save messages: {e}") from e
         except Exception as e:
-            pass
+            logger.error(f"Unexpected error saving messages: {e}")
+            raise
 
-    def add_message(self, message: Message):
+    def save_messages(self) -> None:
+        """Save messages to file synchronously (legacy support) and optionally to SQLite."""
+        try:
+            # Always save to JSON for backward compatibility
+            data = [msg.to_dict() for msg in self.messages]
+            json_data = json.dumps(data, indent=2, ensure_ascii=False)
+
+            # Write to temporary file first for atomicity
+            temp_file = f"{self.messages_file}.tmp"
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                f.write(json_data)
+
+            # Atomic rename
+            os.replace(temp_file, self.messages_file)
+            logger.debug(f"Saved {len(self.messages)} messages to {self.messages_file}")
+
+            # Also save to SQLite if enabled
+            if self.use_sqlite and self.search_engine:
+                # Migrate all messages to SQLite
+                for msg in self.messages:
+                    self._index_message_in_search(msg)
+
+        except (IOError, OSError) as e:
+            logger.error(f"Failed to save messages: {e}")
+            raise IOError(f"Cannot save messages: {e}") from e
+        except Exception as e:
+            logger.error(f"Unexpected error saving messages: {e}")
+            raise
+
+    def add_message(self, message: Message) -> None:
         """Add a message to the store and index for search."""
         self.messages.append(message)
+        logger.debug(f"Added message {message.message_id} from {message.contact_uid}")
 
         # Save to JSON
         self.save_messages()
@@ -152,7 +208,7 @@ class MessageStore:
         if self.use_sqlite and self.search_engine:
             self._index_message_in_search(message)
 
-    def _index_message_in_search(self, message: Message):
+    def _index_message_in_search(self, message: Message) -> None:
         """Index a message in the search engine."""
         if not self.search_engine:
             return
@@ -171,38 +227,42 @@ class MessageStore:
                 group_id=message.group_id,
                 message_type='text'
             )
-        except Exception as e:
+            logger.debug(f"Indexed message {message.message_id} in search engine")
+        except (IOError, OSError) as e:
+            logger.error(f"Failed to index message in search: {e}")
             # Don't fail if indexing fails
-            pass
-    
+        except Exception as e:
+            logger.error(f"Unexpected error indexing message: {e}")
+            # Don't fail if indexing fails
+
     def get_conversation(self, contact_uid: str, limit: Optional[int] = None) -> List[Message]:
         """
         Get all direct messages for a specific contact.
         Returns messages sorted by timestamp (oldest first).
         """
         conversation = [
-            msg for msg in self.messages 
+            msg for msg in self.messages
             if msg.contact_uid == contact_uid and msg.group_id is None
         ]
         conversation.sort(key=lambda m: m.timestamp)
         if limit:
             return conversation[-limit:]
         return conversation
-    
+
     def get_group_conversation(self, group_id: str, limit: Optional[int] = None) -> List[Message]:
         """
         Get all messages for a specific group.
         Returns messages sorted by timestamp (oldest first).
         """
         conversation = [
-            msg for msg in self.messages 
+            msg for msg in self.messages
             if msg.group_id == group_id
         ]
         conversation.sort(key=lambda m: m.timestamp)
         if limit:
             return conversation[-limit:]
         return conversation
-    
+
     def get_recent_conversations(self, limit: int = 10) -> List[str]:
         """
         Get list of contact UIDs with recent direct conversations.
@@ -216,10 +276,10 @@ class MessageStore:
                 else:
                     if msg.timestamp > conversations[msg.contact_uid]:
                         conversations[msg.contact_uid] = msg.timestamp
-        
+
         sorted_contacts = sorted(conversations.items(), key=lambda x: x[1], reverse=True)
         return [contact for contact, _ in sorted_contacts[:limit]]
-    
+
     def get_recent_group_conversations(self, limit: int = 10) -> List[str]:
         """
         Get list of group IDs with recent conversations.
@@ -233,24 +293,25 @@ class MessageStore:
                 else:
                     if msg.timestamp > conversations[msg.group_id]:
                         conversations[msg.group_id] = msg.timestamp
-        
+
         sorted_groups = sorted(conversations.items(), key=lambda x: x[1], reverse=True)
         return [group for group, _ in sorted_groups[:limit]]
-    
-    def mark_as_read(self, contact_uid: str):
+
+    def mark_as_read(self, contact_uid: str) -> None:
         """Mark all direct messages from a contact as read."""
         modified = False
         for msg in self.messages:
-            if (msg.contact_uid == contact_uid and 
-                msg.group_id is None and 
-                not msg.sent_by_me and 
+            if (msg.contact_uid == contact_uid and
+                msg.group_id is None and
+                not msg.sent_by_me and
                 not msg.read):
                 msg.mark_read()
                 modified = True
         if modified:
             self.save_messages()
-    
-    def mark_group_as_read(self, group_id: str):
+            logger.debug(f"Marked messages from {contact_uid} as read")
+
+    def mark_group_as_read(self, group_id: str) -> None:
         """Mark all group messages as read."""
         modified = False
         for msg in self.messages:
@@ -259,41 +320,48 @@ class MessageStore:
                 modified = True
         if modified:
             self.save_messages()
-    
+            logger.debug(f"Marked messages in group {group_id} as read")
+
     def get_unread_count(self, contact_uid: str) -> int:
         """Get count of unread direct messages from a contact."""
         return sum(
-            1 for msg in self.messages 
-            if (msg.contact_uid == contact_uid and 
-                msg.group_id is None and 
-                not msg.sent_by_me and 
+            1 for msg in self.messages
+            if (msg.contact_uid == contact_uid and
+                msg.group_id is None and
+                not msg.sent_by_me and
                 not msg.read)
         )
-    
+
     def get_group_unread_count(self, group_id: str) -> int:
         """Get count of unread messages in a group."""
         return sum(
-            1 for msg in self.messages 
+            1 for msg in self.messages
             if msg.group_id == group_id and not msg.sent_by_me and not msg.read
         )
-    
+
     def get_total_unread_count(self) -> int:
         """Get total count of unread messages from all contacts and groups."""
         return sum(1 for msg in self.messages if not msg.sent_by_me and not msg.read)
-    
-    def delete_conversation(self, contact_uid: str):
+
+    def delete_conversation(self, contact_uid: str) -> None:
         """Delete all direct messages for a contact."""
+        original_count = len(self.messages)
         self.messages = [
-            msg for msg in self.messages 
+            msg for msg in self.messages
             if not (msg.contact_uid == contact_uid and msg.group_id is None)
         ]
+        deleted_count = original_count - len(self.messages)
         self.save_messages()
-    
-    def delete_group_conversation(self, group_id: str):
+        logger.info(f"Deleted {deleted_count} messages for contact {contact_uid}")
+
+    def delete_group_conversation(self, group_id: str) -> None:
         """Delete all messages for a group."""
+        original_count = len(self.messages)
         self.messages = [msg for msg in self.messages if msg.group_id != group_id]
+        deleted_count = original_count - len(self.messages)
         self.save_messages()
-    
+        logger.info(f"Deleted {deleted_count} messages for group {group_id}")
+
     def search_messages(self, query: str, contact_uid: Optional[str] = None,
                        group_id: Optional[str] = None, limit: int = 50) -> List[Message]:
         """
@@ -330,10 +398,14 @@ class MessageStore:
                             messages.append(msg)
                             break
 
+                logger.debug(f"SQLite search for '{query}' found {len(messages)} results")
                 return messages
-            except Exception as e:
+            except (IOError, OSError) as e:
+                logger.error(f"Search engine I/O error: {e}")
                 # Fall back to simple search on error
-                pass
+            except Exception as e:
+                logger.error(f"Search engine error: {e}")
+                # Fall back to simple search on error
 
         # Fallback: simple in-memory search
         query_lower = query.lower()
@@ -349,8 +421,9 @@ class MessageStore:
                 if len(results) >= limit:
                     break
 
+        logger.debug(f"In-memory search for '{query}' found {len(results)} results")
         return results
-    
+
     def delete_all_messages(self) -> bool:
         """
         Delete all messages and the messages file.
@@ -360,7 +433,9 @@ class MessageStore:
         if os.path.exists(self.messages_file):
             try:
                 os.remove(self.messages_file)
+                logger.info("Deleted all messages and messages file")
                 return True
-            except Exception:
+            except (IOError, OSError) as e:
+                logger.error(f"Failed to delete messages file: {e}")
                 return False
         return True
