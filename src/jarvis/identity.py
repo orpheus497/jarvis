@@ -8,10 +8,16 @@ Manages user identity, UID generation, and secure storage.
 
 import json
 import os
+import logging
+import aiofiles
 from typing import Dict, Optional
 from datetime import datetime, timezone
 
 from . import crypto
+
+# Configure logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class Identity:
@@ -98,35 +104,71 @@ class IdentityManager:
         Returns None if file doesn't exist or password is incorrect.
         """
         if not os.path.exists(self.identity_file):
+            logger.debug(f"Identity file does not exist: {self.identity_file}")
             return None
-        
+
         try:
-            with open(self.identity_file, 'r') as f:
+            with open(self.identity_file, 'r', encoding='utf-8') as f:
                 encrypted_data = json.load(f)
-            
+
             identity_data = crypto.decrypt_identity_file(encrypted_data, password)
             self.identity = Identity.from_dict(identity_data)
+            logger.info(f"Identity loaded: {self.identity.username}")
             return self.identity
-        except crypto.CryptoError:
+        except crypto.CryptoError as e:
+            logger.warning(f"Failed to decrypt identity (incorrect password?): {e}")
             return None
-        except Exception:
+        except json.JSONDecodeError as e:
+            logger.error(f"Corrupted identity file (invalid JSON): {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to load identity: {e}", exc_info=True)
             return None
     
-    def save_identity(self, password: str):
-        """Save identity to encrypted file."""
+    def save_identity(self, password: str) -> None:
+        """Save identity to encrypted file (synchronous)."""
         if not self.identity:
+            logger.warning("No identity to save")
             return
-        
-        identity_data = self.identity.to_dict()
-        encrypted_data = crypto.encrypt_identity_file(identity_data, password)
-        
-        # Write atomically by writing to temp file first
-        temp_file = self.identity_file + '.tmp'
-        with open(temp_file, 'w') as f:
-            json.dump(encrypted_data, f, indent=2)
-        
-        # Rename temp file to actual file (atomic on POSIX systems)
-        os.replace(temp_file, self.identity_file)
+
+        try:
+            identity_data = self.identity.to_dict()
+            encrypted_data = crypto.encrypt_identity_file(identity_data, password)
+
+            # Write atomically by writing to temp file first
+            temp_file = self.identity_file + '.tmp'
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                json.dump(encrypted_data, f, indent=2, ensure_ascii=False)
+
+            # Rename temp file to actual file (atomic on POSIX systems)
+            os.replace(temp_file, self.identity_file)
+            logger.info(f"Identity saved: {self.identity.username}")
+        except Exception as e:
+            logger.error(f"Failed to save identity: {e}", exc_info=True)
+            raise IOError(f"Failed to save identity: {e}") from e
+
+    async def save_identity_async(self, password: str) -> None:
+        """Save identity to encrypted file asynchronously."""
+        if not self.identity:
+            logger.warning("No identity to save")
+            return
+
+        try:
+            identity_data = self.identity.to_dict()
+            encrypted_data = crypto.encrypt_identity_file(identity_data, password)
+            json_data = json.dumps(encrypted_data, indent=2, ensure_ascii=False)
+
+            # Write atomically using async I/O
+            temp_file = self.identity_file + '.tmp'
+            async with aiofiles.open(temp_file, 'w', encoding='utf-8') as f:
+                await f.write(json_data)
+
+            # Rename temp file to actual file (atomic on POSIX systems)
+            os.replace(temp_file, self.identity_file)
+            logger.info(f"Identity saved (async): {self.identity.username}")
+        except Exception as e:
+            logger.error(f"Failed to save identity (async): {e}", exc_info=True)
+            raise IOError(f"Failed to save identity: {e}") from e
     
     def identity_exists(self) -> bool:
         """Check if identity file exists."""
@@ -151,26 +193,27 @@ class IdentityManager:
         self.save_identity(new_password)
         return True
     
-    def export_complete_account(self, password: str, export_path: str, 
-                                contact_manager, message_store, 
+    def export_complete_account(self, password: str, export_path: str,
+                                contact_manager, message_store,
                                 group_manager) -> bool:
         """
         Export complete account including identity, contacts, messages, and groups.
-        
+
         Args:
             password: Account password for verification
             export_path: Path to save the complete export
             contact_manager: ContactManager instance for exporting contacts
             message_store: MessageStore instance for exporting messages
             group_manager: GroupManager instance for exporting groups
-            
+
         Returns:
             True if successful, False if password is incorrect
         """
         # Verify password first
         if not self.load_identity(password):
+            logger.error("Export failed: incorrect password")
             return False
-        
+
         try:
             # Collect all account data
             export_data = {
@@ -182,24 +225,30 @@ class IdentityManager:
                 'groups': {},
                 'messages': {}
             }
-            
+
             # Export groups if group_manager has the necessary methods
             if hasattr(group_manager, 'groups'):
                 export_data['groups'] = {gid: group.to_dict() for gid, group in group_manager.groups.items()}
-            
+                logger.debug(f"Exported {len(export_data['groups'])} groups")
+
             # Export messages if message_store has the necessary methods
             if hasattr(message_store, 'get_all_messages'):
                 export_data['messages'] = message_store.get_all_messages()
-            
+                logger.debug(f"Exported messages")
+
             # Encrypt the complete export with password
             encrypted_export = crypto.encrypt_identity_file(export_data, password)
-            
-            # Save to file
-            with open(export_path, 'w') as f:
-                json.dump(encrypted_export, f, indent=2)
-            
+
+            # Save to file atomically
+            temp_file = export_path + '.tmp'
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                json.dump(encrypted_export, f, indent=2, ensure_ascii=False)
+
+            os.replace(temp_file, export_path)
+            logger.info(f"Complete account exported to: {export_path}")
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"Failed to export account: {e}", exc_info=True)
             return False
     
     def delete_identity(self, password: str) -> bool:
@@ -209,14 +258,20 @@ class IdentityManager:
         """
         # Verify password first
         if not self.load_identity(password):
+            logger.error("Delete failed: incorrect password")
             return False
-        
+
         # Delete identity file
         if os.path.exists(self.identity_file):
             try:
+                username = self.identity.username if self.identity else "unknown"
                 os.remove(self.identity_file)
                 self.identity = None
+                logger.info(f"Identity deleted: {username}")
                 return True
-            except Exception:
+            except Exception as e:
+                logger.error(f"Failed to delete identity file: {e}", exc_info=True)
                 return False
+
+        logger.warning("Identity file does not exist, nothing to delete")
         return False

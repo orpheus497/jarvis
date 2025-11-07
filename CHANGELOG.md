@@ -55,11 +55,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **UI File Transfer Integration:** File transfer screen now populated with active transfers from server including progress information
 - FileTransferSession import in server.py for managing file transfer state and chunking
 - MessageSearchEngine import in server.py for SQLite-based message search
+- **Async Identity I/O:** save_identity_async() method in identity.py using aiofiles for non-blocking file operations
+- Comprehensive logging throughout identity.py (load, save, export, delete operations) with info, debug, warning, and error levels
+- Specific exception handling in identity.py (CryptoError, JSONDecodeError, IOError) for better error diagnosis
+- Atomic file writes in export_complete_account() to prevent corruption during export operations
 
 ### Changed
 - All persistence save methods now use atomic file writes (temp file + rename) for data safety and crash resistance
 - Contact manager save operations now available in both synchronous and asynchronous versions for compatibility
 - Message store save operations now available in both synchronous and asynchronous versions for compatibility
+- Identity manager save operations now available in both synchronous and asynchronous versions for compatibility
+- All file operations in identity.py now use explicit UTF-8 encoding and proper error handling
 - All file operations now include proper error handling with specific exception types and error logging
 - Error messages now provide actionable context and stack traces instead of silent failures
 - File load operations now handle corrupted JSON gracefully by logging warning and starting with empty data instead of crashing application
