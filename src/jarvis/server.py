@@ -31,6 +31,8 @@ from .rate_limiter import RateLimiter
 from .backup import BackupManager
 from .errors import JarvisError, ErrorCode
 from .message_queue import MessageQueue
+from .file_transfer import FileTransferSession
+from .search import MessageSearchEngine
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -130,7 +132,8 @@ class JarvisServer:
         self.rate_limiter: Optional[RateLimiter] = None
         self.backup_manager: Optional[BackupManager] = None
         self.file_transfers: Dict[str, Any] = {}  # Track active file transfers
-        
+        self.search_engine: Optional[MessageSearchEngine] = None  # Message search engine
+
         # Message queue
         self.message_queue: Optional[MessageQueue] = None
         
@@ -478,7 +481,10 @@ class JarvisServer:
             
             # Initialize message queue
             self.message_queue = MessageQueue(self.data_dir / 'message_queue.db')
-            logger.info("Initialized managers (Config, RateLimiter, BackupManager, MessageQueue)")
+
+            # Initialize search engine
+            self.search_engine = MessageSearchEngine(self.data_dir / 'messages.db')
+            logger.info("Initialized managers (Config, RateLimiter, BackupManager, MessageQueue, SearchEngine)")
             
             # Initialize network manager (but only start server if not already started)
             if self.network_manager is None:
@@ -1060,103 +1066,264 @@ class JarvisServer:
 
     # File transfer handlers
     async def _handle_send_file(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle file transfer initiation."""
+        """Handle file transfer initiation using FileTransferSession."""
         try:
             contact_uid = params.get('contact_uid')
-            file_path = params.get('file_path')
+            file_path_str = params.get('file_path')
 
-            if not contact_uid or not file_path:
+            if not contact_uid or not file_path_str:
                 return {'success': False, 'error': 'Missing required parameters'}
 
-            # TODO: Implement file transfer using file_transfer.py
-            # For now, return a placeholder response
-            import uuid
-            transfer_id = str(uuid.uuid4())
+            file_path = Path(file_path_str)
 
+            # Validate file exists
+            if not file_path.exists():
+                logger.error(f"File not found: {file_path}")
+                return {'success': False, 'error': 'File not found'}
+
+            if not file_path.is_file():
+                logger.error(f"Not a file: {file_path}")
+                return {'success': False, 'error': 'Not a file'}
+
+            # Validate contact exists
+            if not self.contact_manager or not self.contact_manager.get_contact(contact_uid):
+                logger.error(f"Contact not found: {contact_uid}")
+                return {'success': False, 'error': 'Contact not found'}
+
+            # Generate transfer ID and encryption key
+            import uuid
+            import secrets
+            transfer_id = str(uuid.uuid4())
+            encryption_key = secrets.token_bytes(32)  # 32 bytes for ChaCha20Poly1305
+
+            # Create file transfer session
+            session = FileTransferSession(
+                transfer_id=transfer_id,
+                encryption_key=encryption_key
+            )
+
+            # Prepare file for transfer (generate metadata)
+            metadata = session.chunk_file(file_path)
+
+            # Store session for tracking
             self.file_transfers[transfer_id] = {
+                'session': session,
                 'contact_uid': contact_uid,
-                'file_path': file_path,
-                'status': 'pending',
-                'progress': 0
+                'file_path': str(file_path),
+                'filename': metadata.filename,
+                'size': metadata.size,
+                'total_chunks': metadata.total_chunks,
+                'status': 'ready',
+                'created_at': datetime.now().isoformat()
             }
+
+            logger.info(f"File transfer session created: {transfer_id} for {metadata.filename} ({metadata.size} bytes)")
 
             return {
                 'success': True,
                 'transfer_id': transfer_id,
-                'message': 'File transfer initiated (feature in development)'
+                'filename': metadata.filename,
+                'size': metadata.size,
+                'chunks': metadata.total_chunks,
+                'message': f'File transfer prepared: {metadata.filename}'
             }
+
+        except FileNotFoundError as e:
+            logger.error(f"File not found: {e}")
+            return {'success': False, 'error': 'File not found'}
         except Exception as e:
-            logger.error(f"File transfer error: {e}")
+            logger.error(f"File transfer error: {e}", exc_info=True)
             return {'success': False, 'error': str(e)}
 
     async def _handle_get_file_transfers(self) -> Dict[str, Any]:
-        """Get list of active file transfers."""
-        return {
-            'success': True,
-            'transfers': self.file_transfers
-        }
+        """Get list of active file transfers with progress information."""
+        try:
+            transfers = {}
+            for transfer_id, transfer_info in self.file_transfers.items():
+                # Get progress from session if available
+                session = transfer_info.get('session')
+                if session:
+                    progress = session.get_progress()
+                else:
+                    progress = {'status': transfer_info.get('status', 'unknown')}
+
+                transfers[transfer_id] = {
+                    'contact_uid': transfer_info.get('contact_uid'),
+                    'filename': transfer_info.get('filename'),
+                    'size': transfer_info.get('size'),
+                    'total_chunks': transfer_info.get('total_chunks'),
+                    'status': transfer_info.get('status'),
+                    'created_at': transfer_info.get('created_at'),
+                    'progress': progress
+                }
+
+            return {
+                'success': True,
+                'transfers': transfers,
+                'count': len(transfers)
+            }
+        except Exception as e:
+            logger.error(f"Error getting file transfers: {e}", exc_info=True)
+            return {'success': False, 'error': str(e)}
 
     async def _handle_cancel_file_transfer(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Cancel a file transfer."""
-        transfer_id = params.get('transfer_id')
+        """Cancel an active file transfer."""
+        try:
+            transfer_id = params.get('transfer_id')
 
-        if transfer_id in self.file_transfers:
+            if not transfer_id:
+                return {'success': False, 'error': 'Missing transfer_id parameter'}
+
+            if transfer_id not in self.file_transfers:
+                return {'success': False, 'error': 'Transfer not found'}
+
+            # Get transfer info before deletion
+            transfer_info = self.file_transfers[transfer_id]
+            filename = transfer_info.get('filename', 'unknown')
+
+            # Clean up session
+            session = transfer_info.get('session')
+            if session:
+                # Session cleanup if needed
+                del transfer_info['session']
+
+            # Remove transfer
             del self.file_transfers[transfer_id]
-            return {'success': True, 'message': 'Transfer cancelled'}
 
-        return {'success': False, 'error': 'Transfer not found'}
+            logger.info(f"File transfer cancelled: {transfer_id} ({filename})")
+
+            return {
+                'success': True,
+                'message': f'Transfer cancelled: {filename}'
+            }
+
+        except Exception as e:
+            logger.error(f"Error cancelling file transfer: {e}", exc_info=True)
+            return {'success': False, 'error': str(e)}
 
     # Search handlers
     async def _handle_search_messages(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Search messages."""
+        """Search messages using full-text search engine."""
         try:
-            query = params.get('query', '')
-            limit = params.get('limit', 50)
+            if not self.search_engine:
+                return {
+                    'success': False,
+                    'error': 'Search engine not initialized (login required)'
+                }
 
-            # TODO: Implement using search.py with MessageSearchEngine
-            # For now, return basic search from message store
+            query = params.get('query', '')
+            contact = params.get('contact_uid')
+            group_id = params.get('group_id')
+            start_date = params.get('start_date')
+            end_date = params.get('end_date')
+            limit = params.get('limit', 50)
+            offset = params.get('offset', 0)
+
+            if not query:
+                return {'success': False, 'error': 'Query parameter required'}
+
+            # Perform search using MessageSearchEngine
+            results = self.search_engine.search(
+                query=query,
+                contact=contact,
+                group_id=group_id,
+                start_date=start_date,
+                end_date=end_date,
+                limit=limit,
+                offset=offset
+            )
+
+            logger.info(f"Message search for '{query}' returned {len(results)} results")
+
             return {
                 'success': True,
-                'results': [],
-                'message': 'Search feature in development - requires SQLite migration'
+                'results': results,
+                'count': len(results),
+                'query': query
             }
+
+        except JarvisError as e:
+            logger.error(f"Search error: {e.message}")
+            return {'success': False, 'error': e.message}
         except Exception as e:
-            logger.error(f"Search error: {e}")
+            logger.error(f"Search error: {e}", exc_info=True)
             return {'success': False, 'error': str(e)}
 
     async def _handle_search_by_contact(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Search messages by contact."""
+        """Search all messages with a specific contact."""
         try:
+            if not self.search_engine:
+                return {
+                    'success': False,
+                    'error': 'Search engine not initialized (login required)'
+                }
+
             contact_uid = params.get('contact_uid')
+            limit = params.get('limit', 100)
 
-            if not contact_uid or not self.message_store:
-                return {'success': False, 'error': 'Invalid parameters'}
+            if not contact_uid:
+                return {'success': False, 'error': 'Missing contact_uid parameter'}
 
-            # Get messages from current message store
-            messages = self.message_store.get_messages(contact_uid)
+            # Search using MessageSearchEngine
+            results = self.search_engine.search_by_contact(
+                contact=contact_uid,
+                limit=limit
+            )
+
+            logger.info(f"Contact search for {contact_uid} returned {len(results)} messages")
 
             return {
                 'success': True,
-                'messages': messages
+                'messages': results,
+                'count': len(results),
+                'contact_uid': contact_uid
             }
+
+        except JarvisError as e:
+            logger.error(f"Contact search error: {e.message}")
+            return {'success': False, 'error': e.message}
         except Exception as e:
-            logger.error(f"Search by contact error: {e}")
+            logger.error(f"Contact search error: {e}", exc_info=True)
             return {'success': False, 'error': str(e)}
 
     async def _handle_search_by_date(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Search messages by date range."""
+        """Search messages within a date range."""
         try:
+            if not self.search_engine:
+                return {
+                    'success': False,
+                    'error': 'Search engine not initialized (login required)'
+                }
+
             start_date = params.get('start_date')
             end_date = params.get('end_date')
+            limit = params.get('limit', 100)
 
-            # TODO: Implement with SQLite search engine
+            if not start_date or not end_date:
+                return {'success': False, 'error': 'Missing start_date or end_date parameter'}
+
+            # Search using MessageSearchEngine
+            results = self.search_engine.search_by_date_range(
+                start_date=start_date,
+                end_date=end_date,
+                limit=limit
+            )
+
+            logger.info(f"Date range search returned {len(results)} messages")
+
             return {
                 'success': True,
-                'results': [],
-                'message': 'Date range search in development - requires SQLite migration'
+                'messages': results,
+                'count': len(results),
+                'start_date': start_date,
+                'end_date': end_date
             }
+
+        except JarvisError as e:
+            logger.error(f"Date search error: {e.message}")
+            return {'success': False, 'error': e.message}
         except Exception as e:
-            logger.error(f"Search by date error: {e}")
+            logger.error(f"Date search error: {e}", exc_info=True)
             return {'success': False, 'error': str(e)}
 
     # Backup handlers

@@ -1750,41 +1750,29 @@ class JarvisApp(App):
         """Worker to show search screen."""
         def search_callback(query: str, contact_uid: str = None,
                           group_id: str = None) -> List[Dict]:
-            """Search messages and return results."""
-            messages = self.message_store.search_messages(
+            """Search messages and return results using the search engine."""
+            # Use client adapter to search messages through the server's search engine
+            response = self.client_adapter.search_messages(
                 query=query,
-                contact_uid=contact_uid,
-                group_id=group_id,
                 limit=50
             )
 
-            # Convert Message objects to dict format for display
-            results = []
-            for msg in messages:
-                # Get sender name
-                if msg.sent_by_me:
-                    sender = "You"
-                elif msg.is_group_message() and msg.sender_uid:
-                    contact = self.contact_manager.get_contact(msg.sender_uid)
-                    sender = contact.username if contact else "Unknown"
+            if not response or not response.get('success'):
+                return []
+
+            # Results are already in dict format from the search engine
+            results = response.get('results', [])
+
+            # Enhance results with sender names for display
+            for result in results:
+                sender_uid = result.get('sender')
+                if sender_uid == self.identity.uid:
+                    result['sender_name'] = "You"
+                elif sender_uid and self.contact_manager:
+                    contact = self.contact_manager.get_contact(sender_uid)
+                    result['sender_name'] = contact.username if contact else "Unknown"
                 else:
-                    contact = self.contact_manager.get_contact(msg.contact_uid)
-                    sender = contact.username if contact else "Unknown"
-
-                # Parse timestamp
-                try:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(msg.timestamp.replace('Z', '+00:00'))
-                    timestamp = int(dt.timestamp())
-                except:
-                    timestamp = 0
-
-                results.append({
-                    'sender': sender,
-                    'timestamp': timestamp,
-                    'content': msg.content,
-                    'snippet': msg.content  # Could add highlighting here
-                })
+                    result['sender_name'] = "Unknown"
 
             return results
 
@@ -1912,11 +1900,34 @@ class JarvisApp(App):
         """Worker to show file transfer screen."""
         file_transfer_screen = FileTransferScreen()
 
-        # TODO: Populate with active transfers from client_adapter
-        # if self.client_adapter and hasattr(self.client_adapter, 'get_active_transfers'):
-        #     transfers = self.client_adapter.get_active_transfers()
-        #     for transfer in transfers:
-        #         file_transfer_screen.add_transfer(...)
+        # Populate with active transfers from client_adapter
+        if self.client_adapter:
+            response = self.client_adapter.get_file_transfers()
+            if response and response.get('success'):
+                transfers = response.get('transfers', {})
+                for transfer_id, transfer_info in transfers.items():
+                    # Add active transfers to the screen
+                    filename = transfer_info.get('filename', 'Unknown')
+                    size = transfer_info.get('size', 0)
+                    progress = transfer_info.get('progress', {})
+
+                    file_transfer_screen.add_transfer(
+                        transfer_id=transfer_id,
+                        filename=filename,
+                        total_size=size
+                    )
+
+                    # Update progress if available
+                    if progress.get('status') == 'in_progress':
+                        bytes_transferred = progress.get('bytes_transferred', 0)
+                        speed_bps = progress.get('speed_bytes_per_sec', 0.0)
+                        file_transfer_screen.update_transfer(
+                            transfer_id=transfer_id,
+                            bytes_transferred=bytes_transferred,
+                            speed_bps=speed_bps
+                        )
+                    elif progress.get('status') == 'complete':
+                        file_transfer_screen.complete_transfer(transfer_id)
 
         await self.push_screen_wait(file_transfer_screen)
 

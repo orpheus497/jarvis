@@ -47,6 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Link to docs/COLORS.md in README Interface section
 - Link to docs/DEPENDENCIES.md in README Acknowledgements section
 - License information for all dependencies in README
+- **File Transfer Integration:** Complete server-side file transfer handling in server.py using FileTransferSession for chunked, encrypted file transfers
+- **Search Engine Integration:** MessageSearchEngine initialization in server.py enabling SQLite FTS5 full-text search across message history
+- **File Transfer Handlers:** _handle_send_file(), _handle_get_file_transfers(), and _handle_cancel_file_transfer() methods with validation and progress tracking
+- **Search Handlers:** _handle_search_messages(), _handle_search_by_contact(), and _handle_search_by_date() methods using MessageSearchEngine
+- **UI Search Integration:** Search screen now connected to MessageSearchEngine via client_adapter for full-text search with highlighting
+- **UI File Transfer Integration:** File transfer screen now populated with active transfers from server including progress information
+- FileTransferSession import in server.py for managing file transfer state and chunking
+- MessageSearchEngine import in server.py for SQLite-based message search
 
 ### Changed
 - All persistence save methods now use atomic file writes (temp file + rename) for data safety and crash resistance
