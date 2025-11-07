@@ -73,13 +73,17 @@ class ConnectionStatus:
 
 class P2PConnection:
     """Represents an asynchronous P2P connection with another user."""
-    
+
     # Connection timeouts and retry configuration
     CONNECT_TIMEOUT = 10  # Seconds to wait for initial connection
     HANDSHAKE_TIMEOUT = 15  # Seconds to wait for handshake completion
     OPERATION_TIMEOUT = 60  # Seconds for read operations during normal operation
     PING_INTERVAL = 30  # Seconds between keepalive pings
     PONG_TIMEOUT = 90  # Seconds before considering connection dead
+
+    # Resource limits
+    SEND_QUEUE_MAX_SIZE = 1000  # Maximum queued outgoing messages
+    RECEIVE_BUFFER_MAX_SIZE = 1024 * 1024  # 1MB max receive buffer
     
     def __init__(self, contact: Contact, identity: crypto.IdentityKeyPair,
                  my_uid: str, my_username: str,
@@ -102,7 +106,7 @@ class P2PConnection:
         self.fsm.on_disconnected = self._on_fsm_disconnected
 
         self.receive_task: Optional[asyncio.Task] = None
-        self.send_queue = asyncio.Queue()
+        self.send_queue = asyncio.Queue(maxsize=self.SEND_QUEUE_MAX_SIZE)
         self.send_task: Optional[asyncio.Task] = None
         self.keepalive_task: Optional[asyncio.Task] = None
 
@@ -335,11 +339,15 @@ class P2PConnection:
             
             # Create protocol message
             message = Protocol.create_text_message(message_id, plaintext, timestamp, encrypted)
-            
-            # Add to send queue
-            await self.send_queue.put(message)
-            logger.debug(f"Message queued for {self.contact.username} (ID: {message_id})")
-            return True
+
+            # Add to send queue with timeout to prevent blocking
+            try:
+                await asyncio.wait_for(self.send_queue.put(message), timeout=5.0)
+                logger.debug(f"Message queued for {self.contact.username} (ID: {message_id})")
+                return True
+            except asyncio.TimeoutError:
+                logger.error(f"Send queue full for {self.contact.username}, message dropped")
+                return False
             
         except crypto.CryptoError as e:
             logger.error(f"Encryption failed for message to {self.contact.username}: {e}")
@@ -362,10 +370,15 @@ class P2PConnection:
                 group_id, message_id, self.my_uid,
                 plaintext, timestamp, encrypted
             )
-            
-            await self.send_queue.put(message)
-            logger.debug(f"Group message queued for {self.contact.username} (Group: {group_id[:8]}, ID: {message_id})")
-            return True
+
+            # Add to send queue with timeout to prevent blocking
+            try:
+                await asyncio.wait_for(self.send_queue.put(message), timeout=5.0)
+                logger.debug(f"Group message queued for {self.contact.username} (Group: {group_id[:8]}, ID: {message_id})")
+                return True
+            except asyncio.TimeoutError:
+                logger.error(f"Send queue full for {self.contact.username}, group message dropped")
+                return False
             
         except crypto.CryptoError as e:
             logger.error(f"Encryption failed for group message to {self.contact.username}: {e}")
@@ -395,6 +408,15 @@ class P2PConnection:
                     self.bytes_received += len(data)
                     self.metrics.record_packet_received(len(data))
                     self.buffer += data
+
+                    # Check buffer size to prevent memory exhaustion
+                    if len(self.buffer) > self.RECEIVE_BUFFER_MAX_SIZE:
+                        logger.error(
+                            f"Receive buffer overflow for {self.contact.username} "
+                            f"({len(self.buffer)} bytes), disconnecting"
+                        )
+                        await self.disconnect()
+                        return
 
                     # Process all complete messages in buffer
                     while len(self.buffer) >= Protocol.HEADER_SIZE:
@@ -480,11 +502,15 @@ class P2PConnection:
                 # Send ping
                 try:
                     ping = Protocol.create_ping()
-                    await self.send_queue.put(ping)
-                    self.last_ping = asyncio.get_event_loop().time()
+                    # Use timeout to prevent blocking if queue is full
+                    try:
+                        await asyncio.wait_for(self.send_queue.put(ping), timeout=1.0)
+                        self.last_ping = asyncio.get_event_loop().time()
 
-                    # Record ping time for latency measurement
-                    self.metrics.record_ping()
+                        # Record ping time for latency measurement
+                        self.metrics.record_ping()
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Send queue full, skipping ping for {self.contact.username}")
 
                     # Check if we've received a pong recently
                     if asyncio.get_event_loop().time() - self.last_pong > self.PONG_TIMEOUT:
@@ -561,7 +587,10 @@ class P2PConnection:
         elif msg_type == MessageType.PING:
             # Respond to ping with pong
             pong = Protocol.create_pong()
-            await self.send_queue.put(pong)
+            try:
+                await asyncio.wait_for(self.send_queue.put(pong), timeout=1.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"Send queue full, dropping pong for {self.contact.username}")
         
         elif msg_type == MessageType.PONG:
             # Update last pong time

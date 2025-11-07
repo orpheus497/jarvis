@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CRITICAL:** Silent exception handling in contact persistence (contact.py:95-96, 104-105) preventing error detection and causing potential data loss
 - **CRITICAL:** Silent exception handling in message persistence (message.py:124-125, 141-142) preventing error detection and causing potential data loss
 - **CRITICAL:** Silent exception handling in group persistence (group.py:149-150, 158-159) preventing error detection and causing potential data loss
+- **HIGH:** Resource leak in message_queue.py where database connections never closed properly leading to file descriptor exhaustion
+- **HIGH:** Unbounded send queue and receive buffer in network.py allowing memory exhaustion via DoS attacks
+- **MEDIUM:** Platform incompatibility in server.py using SIGTERM signal unavailable on Windows
+- **MEDIUM:** Inadequate IP validation in utils.py accepting loopback, multicast, link-local, and reserved addresses
 - All file I/O operations now use UTF-8 encoding explicitly to prevent character encoding issues across platforms
 - All save operations now use atomic file writes (write to temporary file then rename) to prevent data corruption during crashes or interruptions
 - Corrupted JSON files in persistence layer now handled gracefully (logs warning and continues) instead of crashing
@@ -30,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Contact manager now provides both async and sync versions of save methods (save_contacts_async, mark_online_async, mark_offline_async)
 - Message store now provides both async and sync versions of save methods (save_messages_async)
 - Group manager save operations enhanced with detailed logging
+- Context manager support (__enter__, __exit__) for MessageQueue class enabling proper resource cleanup with Python 'with' statement
+- Resource limits in network.py: SEND_QUEUE_MAX_SIZE (1000 messages) and RECEIVE_BUFFER_MAX_SIZE (1MB) to prevent memory exhaustion
+- Platform-specific signal handling in server.py supporting both Unix SIGTERM and Windows SIGBREAK
+- IPv6 support in IP address validation alongside existing IPv4 support
+- Configurable IP validation parameters: allow_private and allow_loopback flags in utils.validate_ip()
+- Queue timeout handling (5 second timeout) in network.py send operations preventing indefinite blocking
+- Buffer overflow protection in network.py receive loop disconnecting connections exceeding 1MB buffer
 - Complete UI color palette documentation including red, white, black, grey, purple, cyan, and amber
 - docs/COLORS.md with detailed color usage across status indicators, banners, messages, and actions
 - docs/DEPENDENCIES.md with comprehensive FOSS dependency attributions, licenses, and upstream links
@@ -44,6 +55,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All file operations now include proper error handling with specific exception types and error logging
 - Error messages now provide actionable context and stack traces instead of silent failures
 - File load operations now handle corrupted JSON gracefully by logging warning and starting with empty data instead of crashing application
+- MessageQueue.close() method now includes type hint (-> None) for IDE support
+- P2PConnection.send_queue initialization changed from unbounded Queue() to Queue(maxsize=1000) preventing memory exhaustion
+- P2PConnection send operations (send_message, send_group_message, ping, pong) now use 5-second timeout instead of blocking indefinitely
+- IP validation in utils.py migrated from regex-based approach to Python ipaddress module for RFC-compliant validation
+- IP validation now rejects loopback (127.0.0.0/8, ::1), unspecified (0.0.0.0, ::), reserved, link-local (169.254.0.0/16, fe80::/10), and multicast addresses by default
+- Signal handler setup in server.py now detects platform and uses appropriate signal (SIGTERM on Unix, SIGBREAK on Windows)
 - README networking guidance now emphasizes built-in NAT traversal (UPnP/STUN) and local OS tools
 - README Interface section explicitly documents complete color palette with usage descriptions
 - README Acknowledgements section references centralized dependency documentation
@@ -54,6 +71,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Proper exception handling prevents information leakage through uncontrolled error messages
 - All file I/O operations validate and handle errors before proceeding to prevent undefined behavior
 - UTF-8 encoding explicitly specified to prevent encoding-based injection attacks
+- Resource limits (queue size, buffer size) prevent denial-of-service attacks via memory exhaustion
+- Database connections in MessageQueue now properly closed via context manager preventing file descriptor leaks
+- Receive buffer overflow protection in P2PConnection prevents malicious peers from exhausting memory
+- Send queue limits prevent backpressure-based denial-of-service attacks
+- IP validation now rejects dangerous address ranges (loopback, reserved, multicast, link-local) preventing connection to invalid endpoints
+- Enhanced IP validation using Python ipaddress module provides RFC-compliant security checking
 
 ## [2.1.0] - 2025-10-31
 

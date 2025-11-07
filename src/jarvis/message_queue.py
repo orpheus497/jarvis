@@ -413,13 +413,24 @@ class MessageQueue:
             logger.error(f"Failed to get statistics: {e}")
             return {}
     
-    def close(self):
+    def close(self) -> None:
         """Close database connection."""
         if self.conn:
             self.conn.close()
             self.conn = None
             logger.debug("Message queue database closed")
-    
+
+    def __enter__(self) -> 'MessageQueue':
+        """Enter context manager."""
+        logger.debug("Message queue context manager entered")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Exit context manager and close database connection."""
+        self.close()
+        logger.debug("Message queue context manager exited")
+        return False
+
     def __del__(self):
         """Cleanup on destruction."""
         self.close()

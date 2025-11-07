@@ -14,6 +14,7 @@ import json
 import asyncio
 import signal
 import logging
+import platform
 from pathlib import Path
 from typing import Optional, Dict, Any, Callable
 from datetime import datetime
@@ -162,9 +163,14 @@ class JarvisServer:
             # Create PID file
             self._write_pid_file()
             
-            # Setup signal handlers
+            # Setup signal handlers (platform-specific)
             signal.signal(signal.SIGINT, self._signal_handler)
-            signal.signal(signal.SIGTERM, self._signal_handler)
+            if platform.system() == 'Windows':
+                # Windows doesn't support SIGTERM, use SIGBREAK instead
+                signal.signal(signal.SIGBREAK, self._signal_handler)
+            else:
+                # Unix-like systems (Linux, macOS, etc.)
+                signal.signal(signal.SIGTERM, self._signal_handler)
             
             # Start IPC server using asyncio
             self.ipc_server = await asyncio.start_server(

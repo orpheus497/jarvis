@@ -7,8 +7,9 @@ Provides various utility functions for formatting, validation, and helpers.
 """
 
 import re
+import ipaddress
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Union
 
 
 def format_timestamp(iso_timestamp: str, format_str: str = '%Y-%m-%d %H:%M:%S') -> str:
@@ -76,22 +77,54 @@ def validate_port(port: int) -> bool:
     return 1024 <= port <= 65535
 
 
-def validate_ip(ip: str) -> bool:
+def validate_ip(ip: str, allow_private: bool = True, allow_loopback: bool = False) -> bool:
     """
-    Validate an IP address (IPv4).
-    
+    Validate an IP address (IPv4 or IPv6) with proper range checking.
+
+    Rejects invalid IPs, loopback addresses (unless allow_loopback=True),
+    unspecified addresses (0.0.0.0, ::), reserved addresses, link-local,
+    and multicast addresses.
+
     Args:
-        ip: IP address string
-    
+        ip: IP address string (IPv4 or IPv6)
+        allow_private: Whether to allow private IP ranges (default: True)
+        allow_loopback: Whether to allow loopback addresses (default: False)
+
     Returns:
-        True if valid IPv4, False otherwise
+        True if valid IP address, False otherwise
     """
-    pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
-    if not re.match(pattern, ip):
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+
+        # Reject loopback addresses (127.0.0.0/8, ::1) unless explicitly allowed
+        if not allow_loopback and ip_obj.is_loopback:
+            return False
+
+        # Reject unspecified addresses (0.0.0.0, ::)
+        if ip_obj.is_unspecified:
+            return False
+
+        # Reject reserved addresses
+        if ip_obj.is_reserved:
+            return False
+
+        # Reject link-local addresses (169.254.0.0/16, fe80::/10)
+        if ip_obj.is_link_local:
+            return False
+
+        # Reject multicast addresses
+        if ip_obj.is_multicast:
+            return False
+
+        # Optionally reject private addresses (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, etc.)
+        if not allow_private and ip_obj.is_private:
+            return False
+
+        return True
+
+    except ValueError:
+        # Invalid IP address format
         return False
-    
-    parts = ip.split('.')
-    return all(0 <= int(part) <= 255 for part in parts)
 
 
 def validate_hostname(hostname: str) -> bool:
