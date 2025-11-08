@@ -7,6 +7,152 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2025-11-08
+
+### Security
+- **CRITICAL:** Fixed nonce reuse vulnerability in file transfer encryption (file_transfer.py)
+  - Replaced deterministic hash-based nonce generation with cryptographically secure random nonces using secrets.token_bytes()
+  - Prevents catastrophic nonce reuse attacks in ChaCha20Poly1305 encryption
+  - Each file chunk now uses a unique random nonce
+- **CRITICAL:** Complete redesign of session management system with encryption and expiration (session.py)
+  - Sessions now encrypted with AES-256-GCM using master password-derived key
+  - Added HMAC-SHA256 integrity verification for tamper detection
+  - Implemented automatic session expiration (7-day absolute timeout, 24-hour idle timeout)
+  - Sessions validated on load with expiration and integrity checks
+  - Replaced insecure plaintext JSON storage with encrypted binary format
+- **HIGH:** Fixed DoS vulnerability in Double Ratchet skip key management (ratchet.py)
+  - Implemented aggressive batch cleanup removing 20% of old keys when limit exceeded (not just one)
+  - Added timestamp-based expiration for skipped message keys (1-hour lifetime)
+  - Enhanced DoS protection against memory exhaustion attacks via message gap manipulation
+  - Improved logging for skip key operations and cleanup events
+- **HIGH:** Fixed SQLite thread safety vulnerability in message queue (message_queue.py)
+  - Added threading.Lock for all database operations
+  - Prevents concurrent access to SQLite connection preventing database corruption
+  - Protects against race conditions in multi-threaded environment
+  - All database operations now atomic and thread-safe
+- **HIGH:** Fixed synchronous I/O blocking on message critical path (message.py)
+  - Implemented write-behind caching with intelligent batching
+  - Messages now saved every 10 messages or every 5 seconds (whichever comes first)
+  - Reduces file I/O operations by ~90% under normal load
+  - Added flush() method for explicit persistence control
+  - Prevents message loss via dirty flag tracking
+- **HIGH:** Fixed exception handling and deprecated APIs in network layer (network.py)
+  - Replaced bare except clauses with specific exception types in writer cleanup
+  - Fixed deprecated asyncio.get_event_loop() calls (replaced with time.time())
+  - Added exception handler for unreferenced async state change callback tasks
+  - Prevents silent task exception loss and improves error visibility
+- **MEDIUM:** Fixed path traversal vulnerability in backup restoration (backup.py)
+  - Added _safe_extract() method to validate tar members before extraction
+  - Prevents malicious backups from extracting files outside target directory (CWE-22)
+  - Validates all member paths against extraction directory
+  - Rejects absolute paths and parent directory references
+- **MEDIUM:** Strengthened backup encryption key derivation (backup.py)
+  - Increased PBKDF2-HMAC-SHA256 iterations from 100,000 to 600,000
+  - Meets OWASP 2023 recommendations (exceeds NIST minimum of 210,000)
+  - Provides stronger protection against brute-force attacks on backup passwords
+
+### Fixed
+- Fixed file transfer encryption to use secrets module for cryptographically secure nonce generation
+- Fixed silent exception swallowing in session management preventing error detection
+- Fixed broad exception handling in crypto module (crypto.py)
+  - Replaced generic Exception catches with specific exception types (KeyError, ValueError, UnicodeDecodeError)
+  - Added proper exception chaining using 'from e' syntax for better debugging
+  - Distinguishes between authentication failures and other cryptographic errors
+- Fixed bare except clauses in utils module (utils.py)
+  - Replaced bare except with specific exceptions (ValueError, TypeError, AttributeError)
+  - Added logging for timestamp parsing failures
+  - Improved error handling in format_timestamp and format_timestamp_relative functions
+- Fixed exception handling in Double Ratchet decryption (ratchet.py)
+  - Added input validation for ciphertext length
+  - Separated authentication failures from other decryption errors
+  - Improved error messages with context
+- Fixed thread safety issues in message queue (message_queue.py)
+  - All database operations now protected by threading.Lock
+  - Added exc_info=True to exception logging for better debugging
+  - Improved error handling with specific exception information
+- Fixed synchronous I/O blocking in message storage (message.py)
+  - Every message addition no longer triggers immediate file write
+  - Implemented intelligent batching based on count and time
+  - Added dirty flag tracking to prevent unnecessary saves
+- Fixed bare except clauses in network layer (network.py)
+  - Replaced 2 bare except clauses with specific exception handling (OSError, RuntimeError, asyncio.CancelledError)
+  - Added debug logging for writer cleanup failures
+  - Prevents catching SystemExit and KeyboardInterrupt
+- Fixed deprecated asyncio.get_event_loop() usage in network layer (network.py)
+  - Replaced 7 instances of deprecated asyncio.get_event_loop().time() with time.time()
+  - Modernized timing code to use standard library time module
+  - Eliminates deprecation warnings and improves compatibility
+- Fixed unreferenced async task in connection state callbacks (network.py)
+  - Added exception handler callback to state change notification tasks
+  - Prevents silent loss of exceptions in async callbacks
+  - Added _handle_callback_exception method for proper error logging
+- Fixed path traversal vulnerability in backup restoration (backup.py)
+  - tar.extractall() now replaced with validated extraction
+  - Added _safe_extract() method to check all tar member paths
+  - Prevents CWE-22 (Improper Limitation of a Pathname to a Restricted Directory)
+  - Rejects dangerous paths containing ".." or absolute paths
+- Added proper error handling and logging to file transfer operations
+- Added OSError-specific exception handling for file I/O operations in file transfer
+- Session manager now uses atomic file writes (temp file + rename) to prevent corruption
+
+### Changed
+- File transfer nonce generation now uses secrets.token_bytes() instead of deterministic hashing
+- Session storage migrated from plaintext JSON to AES-256-GCM encrypted format with HMAC
+- Session tokens now generated using secrets.token_urlsafe() for improved security
+- Enhanced exception handling in file transfer with proper error propagation using 'from e' syntax
+- Improved logging throughout file transfer and session management modules
+- Double Ratchet skip key storage now includes timestamps for expiration tracking
+- Ratchet skip key cleanup now removes batches of old keys instead of single keys
+- Message queue now uses threading.Lock for thread-safe database access
+- All message queue methods now protected against concurrent access
+- Message storage now uses write-behind caching with configurable batch size
+- Message persistence strategy changed from immediate to batched writes
+- Network layer timing now uses time.time() instead of deprecated asyncio.get_event_loop().time()
+- Network layer writer cleanup now uses specific exception types instead of bare except
+- Connection state callbacks now properly track and log async task exceptions
+- Backup restoration now uses validated extraction instead of direct tar.extractall()
+- Backup PBKDF2 key derivation increased from 100,000 to 600,000 iterations
+
+### Added
+- Atomic file writes in session manager to prevent data corruption during crashes
+- Session expiration mechanism with configurable absolute and idle timeouts
+- Session revocation API for disabling compromised sessions
+- HMAC-based integrity verification for encrypted session files
+- Cleanup method for removing expired sessions
+- Enhanced file transfer error messages with context and troubleshooting information
+- Time-based expiration for Double Ratchet skipped message keys
+- Aggressive batch cleanup for skip keys to prevent DoS attacks
+- Cleanup methods for expired and oldest skip keys in ratchet
+- Enhanced logging throughout ratchet, crypto, and utils modules
+- Exception handler callback (_handle_callback_exception) for async state change notifications in network layer
+- Debug logging for network writer cleanup failures
+- Path traversal protection via _safe_extract() method in backup restoration
+- Validation for tar member paths to prevent directory escape attacks
+- **NEW:** Comprehensive application metrics and monitoring system (metrics.py)
+  - ApplicationMetrics class for centralized metric collection
+  - Thread-safe counters, gauges, and histograms
+  - Health check monitoring for all components
+  - Historical data retention (60-minute rolling window)
+  - Per-connection quality metrics (latency, throughput, packet loss)
+  - Quality indicators (1-5 bars) based on connection performance
+  - Metric snapshots for trending and analysis
+  - Global singleton pattern for easy access (get_app_metrics())
+- **NEW:** Metrics integration throughout application subsystems
+  - Network layer (network.py) tracks connection attempts, successes, failures, and active connections
+  - File transfer (file_transfer.py) tracks files sent/received/failed, transfer duration, and file sizes
+  - Message handling tracks messages sent/received/failed/queued/delivered
+  - Connection quality tracking with latency histograms
+  - Error tracking by category (network, crypto, I/O errors)
+  - Incoming/rejected connection monitoring
+  - Queue-based message delivery tracking
+
+### Performance
+- Reduced memory usage in Double Ratchet by removing expired skip keys automatically
+- Improved skip key cleanup efficiency with batch operations
+- **Reduced message storage I/O by ~90%** through write-behind caching
+- Batched message writes (every 10 messages or 5 seconds) drastically improve throughput
+- Eliminated file I/O bottleneck on message receive critical path
+
 ## [2.4.0] - 2025-11-08
 
 ### Security

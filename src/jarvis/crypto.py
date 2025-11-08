@@ -2,6 +2,7 @@
 Jarvis - Multi-layer cryptographic operations.
 
 Created by orpheus497
+Version: 2.4.0
 
 This module implements a supreme five-layer encryption system:
 - Layer 1: X25519 ECDH key exchange for session establishment
@@ -12,6 +13,11 @@ This module implements a supreme five-layer encryption system:
 - Layer 6: AES-256-GCM encryption (fifth layer)
 - Layer 7: Argon2id-based identity derivation
 - Layer 8: Message authentication and integrity verification
+
+Security improvements:
+- Specific exception handling for better error diagnosis
+- Proper exception chaining with 'from e' syntax
+- Distinguishes between authentication failures and other errors
 
 All cryptographic operations use well-tested, open-source libraries:
 - cryptography library (Apache 2.0/BSD License)
@@ -317,8 +323,19 @@ def decrypt_message_five_layer(
         plaintext_bytes = aesgcm1.decrypt(nonce1, ciphertext1, None)
 
         return plaintext_bytes.decode("utf-8")
+
+    except (KeyError, ValueError) as e:
+        # Missing or invalid encrypted data fields
+        raise CryptoError(f"Invalid encrypted message format: {e}") from e
+    except UnicodeDecodeError as e:
+        # Decrypted bytes are not valid UTF-8 (wrong key or corrupted)
+        raise CryptoError(f"Decrypted data is not valid UTF-8 text: {e}") from e
     except Exception as e:
-        raise CryptoError(f"Decryption failed: {e!s}")
+        # Cryptographic errors (authentication failure, invalid tag, etc.)
+        # This typically means wrong keys or tampered ciphertext
+        raise CryptoError(
+            f"Five-layer decryption failed (possible tampering or wrong keys): {e}"
+        ) from e
 
 
 def encrypt_identity_file(identity_data: Dict, password: str) -> Dict[str, str]:
@@ -589,8 +606,12 @@ def encrypt_with_ratchet(plaintext: str, ratchet_session: "RatchetSession") -> D
             "msg_number": msg_number,
             "ratchet": True,  # Flag to indicate ratchet encryption
         }
+    except (AttributeError, TypeError) as e:
+        # Invalid ratchet session or plaintext
+        raise CryptoError(f"Invalid ratchet session or input: {e}") from e
     except Exception as e:
-        raise CryptoError(f"Ratchet encryption failed: {e}")
+        # Cryptographic errors during ratchet encryption
+        raise CryptoError(f"Ratchet encryption failed: {e}") from e
 
 
 def decrypt_with_ratchet(encrypted_data: Dict[str, str], ratchet_session: "RatchetSession") -> str:
@@ -621,8 +642,19 @@ def decrypt_with_ratchet(encrypted_data: Dict[str, str], ratchet_session: "Ratch
         plaintext_bytes = ratchet_session.decrypt_message(ciphertext, dh_public, msg_number)
 
         return plaintext_bytes.decode("utf-8")
+
+    except (KeyError, ValueError) as e:
+        # Missing or invalid encrypted data fields
+        raise CryptoError(f"Invalid ratchet message format: {e}") from e
+    except UnicodeDecodeError as e:
+        # Decrypted bytes are not valid UTF-8
+        raise CryptoError(f"Decrypted ratchet data is not valid UTF-8: {e}") from e
+    except (AttributeError, TypeError) as e:
+        # Invalid ratchet session
+        raise CryptoError(f"Invalid ratchet session: {e}") from e
     except Exception as e:
-        raise CryptoError(f"Ratchet decryption failed: {e}")
+        # Cryptographic errors during ratchet decryption
+        raise CryptoError(f"Ratchet decryption failed: {e}") from e
 
 
 def encrypt_message_with_ratchet_option(

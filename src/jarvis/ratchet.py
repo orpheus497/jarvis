@@ -9,12 +9,18 @@ The Double Ratchet combines:
 - Symmetric ratchet (HKDF) for key derivation
 - Message keys that are deleted immediately after use
 
+Security improvements:
+- Limited skip key storage with aggressive cleanup to prevent DoS
+- Timestamp-based expiration for old skipped keys
+- Batch removal of expired keys for efficiency
+
 Author: orpheus497
-Version: 2.3.0
+Version: 2.4.0
 """
 
 import logging
 import secrets
+import time
 from typing import Dict, Optional, Tuple
 
 from cryptography.hazmat.primitives import hashes, serialization
@@ -22,7 +28,7 @@ from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from .constants import KEY_SIZE, NONCE_SIZE, RATCHET_MAX_SKIP
+from .constants import KEY_SIZE, NONCE_SIZE, RATCHET_MAX_SKIP, RATCHET_MESSAGE_KEY_LIFETIME
 from .errors import CryptoError, ErrorCode
 
 logger = logging.getLogger(__name__)
@@ -44,7 +50,7 @@ class RatchetState:
         send_msg_number: Next message number to send
         recv_msg_number: Next message number to receive
         prev_send_count: Messages sent with previous chain
-        skipped_keys: Stored keys for out-of-order messages
+        skipped_keys: Stored keys for out-of-order messages (key -> (message_key, timestamp))
     """
 
     def __init__(self):
@@ -58,7 +64,8 @@ class RatchetState:
         self.send_msg_number: int = 0
         self.recv_msg_number: int = 0
         self.prev_send_count: int = 0
-        self.skipped_keys: Dict[Tuple[bytes, int], bytes] = {}
+        # Store (message_key, timestamp) for each skipped key
+        self.skipped_keys: Dict[Tuple[bytes, int], Tuple[bytes, float]] = {}
 
     def generate_dh_keypair(self) -> None:
         """Generate a new Diffie-Hellman key pair."""
@@ -286,7 +293,9 @@ class RatchetSession:
         # Check for skipped message
         skip_key = (dh_public, msg_number)
         if skip_key in self.state.skipped_keys:
-            message_key = self.state.skipped_keys.pop(skip_key)
+            # Extract message_key from tuple (message_key, timestamp)
+            message_key, _ = self.state.skipped_keys.pop(skip_key)
+            logger.debug(f"Using skipped message key for message {msg_number}")
             return self._decrypt_with_key(ciphertext, message_key)
 
         # Skip any intermediate messages
@@ -312,9 +321,16 @@ class RatchetSession:
             Decrypted plaintext
 
         Raises:
-            CryptoError: If decryption fails
+            CryptoError: If decryption fails or authentication fails
         """
         try:
+            # Validate ciphertext length
+            if len(ciphertext) < NONCE_SIZE:
+                raise CryptoError(
+                    ErrorCode.E102_DECRYPTION_FAILED,
+                    f"Ciphertext too short: {len(ciphertext)} < {NONCE_SIZE}",
+                )
+
             # Extract nonce and actual ciphertext
             nonce = ciphertext[:NONCE_SIZE]
             actual_ciphertext = ciphertext[NONCE_SIZE:]
@@ -322,21 +338,39 @@ class RatchetSession:
             cipher = ChaCha20Poly1305(message_key)
             plaintext = cipher.decrypt(nonce, actual_ciphertext, None)
 
-            # Securely delete message key
+            # Securely delete message key (note: Python doesn't actually wipe memory)
             message_key = None
 
             logger.debug("Successfully decrypted message")
             return plaintext
 
+        except CryptoError:
+            # Re-raise our own errors
+            raise
+        except ValueError as e:
+            # Authentication failure (invalid tag)
+            logger.error(f"Message authentication failed: {e}")
+            raise CryptoError(
+                ErrorCode.E102_DECRYPTION_FAILED,
+                f"Message authentication failed (possible tampering): {e}",
+                {"error": str(e)},
+            ) from e
         except Exception as e:
+            # Other cryptographic errors
+            logger.error(f"Unexpected decryption error: {e}", exc_info=True)
             raise CryptoError(
                 ErrorCode.E102_DECRYPTION_FAILED,
                 f"Message decryption failed: {e}",
                 {"error": str(e)},
-            )
+            ) from e
 
     def _skip_message_keys(self, until: int) -> None:
-        """Store message keys for skipped messages.
+        """Store message keys for skipped messages with DoS protection.
+
+        Security: Implements aggressive cleanup to prevent memory exhaustion attacks:
+        - Limits maximum gap between messages (RATCHET_MAX_SKIP)
+        - Cleans up expired keys based on time (RATCHET_MESSAGE_KEY_LIFETIME)
+        - Removes batch of old keys when storage limit exceeded (not just one)
 
         Args:
             until: Skip messages until this number
@@ -347,30 +381,85 @@ class RatchetSession:
         if self.state.recv_chain_key is None:
             return
 
+        # Cleanup expired keys before processing
+        self._cleanup_expired_skipped_keys()
+
         skipped = until - self.state.recv_msg_number
         if skipped > RATCHET_MAX_SKIP:
+            logger.warning(
+                f"Rejecting message with excessive gap: {skipped} > {RATCHET_MAX_SKIP}"
+            )
             raise CryptoError(
                 ErrorCode.E107_RATCHET_ERROR,
                 f"Too many skipped messages: {skipped} > {RATCHET_MAX_SKIP}",
+                {"skipped": skipped, "max_allowed": RATCHET_MAX_SKIP},
             )
 
         if skipped > 0:
             logger.debug(f"Skipping {skipped} message keys")
 
+        current_time = time.time()
+
         while self.state.recv_msg_number < until:
             self.state.recv_chain_key, message_key = self._kdf_ck(self.state.recv_chain_key)
 
             skip_key = (self.state.dh_remote, self.state.recv_msg_number)
-            self.state.skipped_keys[skip_key] = message_key
+            # Store message key with current timestamp
+            self.state.skipped_keys[skip_key] = (message_key, current_time)
 
             self.state.recv_msg_number += 1
 
-            # Limit stored skipped keys
+            # Aggressive cleanup when limit exceeded - prevent DoS
             if len(self.state.skipped_keys) > RATCHET_MAX_SKIP:
-                # Remove oldest key
-                oldest = min(self.state.skipped_keys.keys(), key=lambda x: x[1])
-                del self.state.skipped_keys[oldest]
-                logger.warning("Removed oldest skipped message key")
+                self._cleanup_oldest_skipped_keys()
+
+    def _cleanup_expired_skipped_keys(self) -> None:
+        """Remove skipped keys that have exceeded their lifetime.
+
+        This prevents memory exhaustion from accumulated old keys.
+        Keys older than RATCHET_MESSAGE_KEY_LIFETIME seconds are removed.
+        """
+        current_time = time.time()
+        expired_keys = []
+
+        for skip_key, (message_key, timestamp) in self.state.skipped_keys.items():
+            if current_time - timestamp > RATCHET_MESSAGE_KEY_LIFETIME:
+                expired_keys.append(skip_key)
+
+        if expired_keys:
+            for skip_key in expired_keys:
+                del self.state.skipped_keys[skip_key]
+            logger.info(f"Cleaned up {len(expired_keys)} expired skipped message keys")
+
+    def _cleanup_oldest_skipped_keys(self) -> None:
+        """Remove oldest 20% of skipped keys when storage limit exceeded.
+
+        This provides aggressive DoS protection by batch-removing old keys
+        instead of just one at a time, making it harder for attackers to
+        exhaust memory.
+        """
+        if not self.state.skipped_keys:
+            return
+
+        # Remove 20% of keys (minimum 10, maximum 200)
+        num_to_remove = max(10, min(200, len(self.state.skipped_keys) // 5))
+
+        # Sort by message number (second element of key tuple) and timestamp
+        # Remove oldest by timestamp
+        sorted_keys = sorted(
+            self.state.skipped_keys.items(),
+            key=lambda item: item[1][1]  # Sort by timestamp
+        )
+
+        keys_to_remove = sorted_keys[:num_to_remove]
+
+        for skip_key, _ in keys_to_remove:
+            del self.state.skipped_keys[skip_key]
+
+        logger.warning(
+            f"Removed {num_to_remove} oldest skipped keys (limit exceeded: "
+            f"{len(self.state.skipped_keys) + num_to_remove} > {RATCHET_MAX_SKIP})"
+        )
 
     def get_state_dict(self) -> Dict:
         """Get ratchet state as dictionary for serialization.

@@ -20,6 +20,7 @@ import asyncio
 import contextlib
 import logging
 import struct
+import time
 from pathlib import Path
 from typing import Callable, Dict, Optional, Set, Tuple
 
@@ -29,7 +30,7 @@ from .connection_fsm import ConnectionState as FSMState
 from .contact import Contact
 from .discovery import DiscoveryService
 from .message_queue import MessageQueue
-from .metrics import ConnectionMetrics
+from .metrics import ConnectionMetrics, get_app_metrics
 from .nat_traversal import NATTraversal
 from .protocol import MessageType, Protocol
 from .rate_limiter import RateLimiter
@@ -117,8 +118,8 @@ class P2PConnection:
         self.keepalive_task: Optional[asyncio.Task] = None
 
         self.buffer = b""
-        self.last_ping = asyncio.get_event_loop().time()
-        self.last_pong = asyncio.get_event_loop().time()
+        self.last_ping = time.time()
+        self.last_pong = time.time()
 
         # Rate limiting and metrics
         self.rate_limiter = rate_limiter
@@ -179,6 +180,10 @@ class P2PConnection:
         """
         try:
             self.connection_attempts += 1
+
+            # Track connection attempt in application metrics
+            metrics = get_app_metrics()
+            metrics.increment_counter("connections.total")
 
             # FSM: Start connection process
             self.fsm.transition(ConnectionEvent.CONNECT_REQUESTED)
@@ -314,18 +319,32 @@ class P2PConnection:
 
             logger.info(f"Successfully connected to {self.contact.username}")
             self.last_error = None
+
+            # Track successful connection in application metrics
+            metrics.increment_counter("connections.successful")
+
             return True
 
         except asyncio.TimeoutError as e:
             self.last_error = f"Timeout: {e}"
             logger.warning(f"Connection to {self.contact.username} timed out: {e}")
             self._set_state(ConnectionState.ERROR)
+
+            # Track connection failure in application metrics
+            metrics.increment_counter("connections.failed")
+            metrics.increment_counter("errors.network")
+
             await self.disconnect()
             return False
         except OSError as e:
             self.last_error = f"OS error: {e}"
             logger.warning(f"OS error connecting to {self.contact.username}: {e}")
             self._set_state(ConnectionState.ERROR)
+
+            # Track connection failure in application metrics
+            metrics.increment_counter("connections.failed")
+            metrics.increment_counter("errors.network")
+
             await self.disconnect()
             return False
         except Exception as e:
@@ -334,6 +353,11 @@ class P2PConnection:
                 f"Unexpected error connecting to {self.contact.username}: {e}", exc_info=True
             )
             self._set_state(ConnectionState.ERROR)
+
+            # Track connection failure in application metrics
+            metrics.increment_counter("connections.failed")
+            metrics.increment_counter("errors.total")
+
             await self.disconnect()
             return False
 
@@ -361,16 +385,38 @@ class P2PConnection:
             try:
                 await asyncio.wait_for(self.send_queue.put(message), timeout=5.0)
                 logger.debug(f"Message queued for {self.contact.username} (ID: {message_id})")
+
+                # Track successful message send in application metrics
+                metrics = get_app_metrics()
+                metrics.increment_counter("messages.sent")
+
                 return True
             except asyncio.TimeoutError:
                 logger.error(f"Send queue full for {self.contact.username}, message dropped")
+
+                # Track failed message send in application metrics
+                metrics = get_app_metrics()
+                metrics.increment_counter("messages.failed")
+
                 return False
 
         except crypto.CryptoError as e:
             logger.error(f"Encryption failed for message to {self.contact.username}: {e}")
+
+            # Track encryption failure in application metrics
+            metrics = get_app_metrics()
+            metrics.increment_counter("messages.failed")
+            metrics.increment_counter("errors.crypto")
+
             return False
         except Exception as e:
             logger.error(f"Failed to queue message to {self.contact.username}: {e}", exc_info=True)
+
+            # Track message failure in application metrics
+            metrics = get_app_metrics()
+            metrics.increment_counter("messages.failed")
+            metrics.increment_counter("errors.total")
+
             return False
 
     async def send_group_message(
@@ -532,7 +578,7 @@ class P2PConnection:
                     # Use timeout to prevent blocking if queue is full
                     try:
                         await asyncio.wait_for(self.send_queue.put(ping), timeout=1.0)
-                        self.last_ping = asyncio.get_event_loop().time()
+                        self.last_ping = time.time()
 
                         # Record ping time for latency measurement
                         self.metrics.record_ping()
@@ -542,7 +588,7 @@ class P2PConnection:
                         )
 
                     # Check if we've received a pong recently
-                    if asyncio.get_event_loop().time() - self.last_pong > self.PONG_TIMEOUT:
+                    if time.time() - self.last_pong > self.PONG_TIMEOUT:
                         logger.warning(
                             f"No pong from {self.contact.username} in {self.PONG_TIMEOUT}s"
                         )
@@ -570,6 +616,10 @@ class P2PConnection:
                     encrypted_data = payload.get("encrypted", {})
                     plaintext = crypto.decrypt_message_five_layer(encrypted_data, self.session_keys)
 
+                    # Track successful message receipt in application metrics
+                    metrics = get_app_metrics()
+                    metrics.increment_counter("messages.received")
+
                     # Call callback (may be sync or async)
                     if asyncio.iscoroutinefunction(self.on_message_callback):
                         await self.on_message_callback(
@@ -588,12 +638,20 @@ class P2PConnection:
                 except crypto.CryptoError as e:
                     logger.error(f"Decryption failed for message from {self.contact.username}: {e}")
 
+                    # Track decryption failure in application metrics
+                    metrics = get_app_metrics()
+                    metrics.increment_counter("errors.crypto")
+
         elif msg_type == MessageType.GROUP_MESSAGE:
             # Decrypt and deliver group message
             if self.session_keys and self.on_group_message_callback:
                 try:
                     encrypted_data = payload.get("encrypted", {})
                     plaintext = crypto.decrypt_message_five_layer(encrypted_data, self.session_keys)
+
+                    # Track successful group message receipt in application metrics
+                    metrics = get_app_metrics()
+                    metrics.increment_counter("messages.received")
 
                     # Call callback (may be sync or async)
                     if asyncio.iscoroutinefunction(self.on_group_message_callback):
@@ -617,6 +675,10 @@ class P2PConnection:
                         f"Decryption failed for group message from {self.contact.username}: {e}"
                     )
 
+                    # Track decryption failure in application metrics
+                    metrics = get_app_metrics()
+                    metrics.increment_counter("errors.crypto")
+
         elif msg_type == MessageType.PING:
             # Respond to ping with pong
             pong = Protocol.create_pong()
@@ -627,7 +689,7 @@ class P2PConnection:
 
         elif msg_type == MessageType.PONG:
             # Update last pong time
-            self.last_pong = asyncio.get_event_loop().time()
+            self.last_pong = time.time()
 
             # Record pong time for latency measurement
             latency = self.metrics.record_pong()
@@ -674,9 +736,20 @@ class P2PConnection:
         if self.on_state_change_callback:
             # Call callback (may be sync or async)
             if asyncio.iscoroutinefunction(self.on_state_change_callback):
-                asyncio.create_task(self.on_state_change_callback(self.contact.uid, state))
+                # Create task with exception handler to prevent silent failures
+                task = asyncio.create_task(self.on_state_change_callback(self.contact.uid, state))
+                task.add_done_callback(self._handle_callback_exception)
             else:
                 self.on_state_change_callback(self.contact.uid, state)
+
+    def _handle_callback_exception(self, task: asyncio.Task):
+        """Handle exceptions from async state change callbacks."""
+        try:
+            task.result()  # Retrieve exception if any
+        except asyncio.CancelledError:
+            pass  # Task was cancelled, this is expected
+        except Exception as e:
+            logger.error(f"Exception in state change callback for {self.contact.username}: {e}", exc_info=True)
 
 
 class P2PServer:
@@ -779,15 +852,15 @@ class P2PServer:
             try:
                 writer.close()
                 await writer.wait_closed()
-            except:
-                pass
+            except (OSError, RuntimeError, asyncio.CancelledError) as e:
+                logger.debug(f"Error closing writer after timeout: {e}")
         except Exception as e:
             logger.error(f"Error handling connection from {address}: {e}")
             try:
                 writer.close()
                 await writer.wait_closed()
-            except:
-                pass
+            except (OSError, RuntimeError, asyncio.CancelledError) as e:
+                logger.debug(f"Error closing writer after error: {e}")
 
 
 class ConnectionPoolEntry:
@@ -795,8 +868,8 @@ class ConnectionPoolEntry:
 
     def __init__(self, connection: P2PConnection):
         self.connection = connection
-        self.created_at = asyncio.get_event_loop().time()
-        self.last_used = asyncio.get_event_loop().time()
+        self.created_at = time.time()
+        self.last_used = time.time()
         self.reuse_count = 0
         self.is_healthy = True
 
@@ -1283,7 +1356,7 @@ class NetworkManager:
             # Peer is offline, queue message
             if self.message_queue:
                 logger.info(f"Peer {uid[:8]} is offline, queueing message {message_id[:8]}")
-                await self.message_queue.enqueue(
+                success = await self.message_queue.enqueue(
                     recipient_uid=uid,
                     sender_uid=self.my_uid,
                     message_type="text",
@@ -1293,7 +1366,13 @@ class NetworkManager:
                         "timestamp": timestamp,
                     },
                 )
-                return True  # Queued successfully
+
+                if success:
+                    # Track queued message in application metrics
+                    metrics = get_app_metrics()
+                    metrics.increment_counter("messages.queued")
+
+                return success
             else:
                 logger.warning(f"Message queue not initialized, cannot queue message for {uid[:8]}")
                 return False
@@ -1446,6 +1525,10 @@ class NetworkManager:
         """Handle incoming connection from a peer."""
         ip_address = address[0]
 
+        # Track incoming connection attempt in application metrics
+        metrics = get_app_metrics()
+        metrics.increment_counter("connections.incoming")
+
         # Security check: verify IP is allowed
         if self.security:
             allowed, reason = await self.security.check_ip_allowed(ip_address)
@@ -1453,6 +1536,10 @@ class NetworkManager:
                 logger.warning(f"Connection rejected from {ip_address}: {reason}")
                 writer.close()
                 await writer.wait_closed()
+
+                # Track rejected connection
+                metrics.increment_counter("connections.rejected")
+
                 return
 
             # Record connection attempt
@@ -1560,6 +1647,9 @@ class NetworkManager:
         # Get all queued messages for this recipient
         queued = await self.message_queue.get_queued_for_recipient(uid)
 
+        # Track queued message delivery metrics
+        metrics = get_app_metrics()
+
         for msg in queued:
             try:
                 # Try to send the message
@@ -1572,6 +1662,9 @@ class NetworkManager:
                     # Mark as delivered
                     await self.message_queue.mark_delivered(msg["queue_id"])
                     logger.info(f"Delivered queued message {msg['queue_id']} to {uid[:8]}")
+
+                    # Track successful delivery of queued message
+                    metrics.increment_counter("messages.delivered")
                 else:
                     # Mark as failed, will retry later
                     await self.message_queue.mark_failed(msg["queue_id"])

@@ -2,15 +2,22 @@
 Jarvis - Message Queue for offline recipients.
 
 Created by orpheus497
+Version: 2.4.0
 
 This module implements persistent message queuing for offline recipients.
 Messages are queued when recipients are unreachable and delivered automatically
 when they come online. Includes delivery receipts and retry logic.
+
+Thread safety improvements:
+- Added threading.Lock for all database operations
+- Prevents concurrent access to SQLite connection
+- Protects against database corruption in multi-threaded environment
 """
 
 import json
 import logging
 import sqlite3
+import threading
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -59,6 +66,10 @@ class MessageQueue:
 
     Stores messages in SQLite database and handles automatic delivery
     when recipients come online. Includes retry logic and expiration.
+
+    Thread Safety:
+        All database operations are protected by a threading.Lock to prevent
+        concurrent access and potential database corruption.
     """
 
     def __init__(self, db_path: Path):
@@ -74,44 +85,48 @@ class MessageQueue:
         self.conn: Optional[sqlite3.Connection] = None
         self.last_cleanup = time.time()
 
+        # Thread safety: Lock for all database operations
+        self._db_lock = threading.Lock()
+
         self._init_database()
 
     def _init_database(self):
-        """Initialize database schema."""
-        self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
+        """Initialize database schema with thread-safe connection."""
+        with self._db_lock:
+            self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
 
-        cursor = self.conn.cursor()
+            cursor = self.conn.cursor()
 
-        # Create messages table
-        cursor.execute(
+            # Create messages table
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS queued_messages (
+                    queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recipient_uid TEXT NOT NULL,
+                    sender_uid TEXT NOT NULL,
+                    message_type TEXT NOT NULL,
+                    message_data TEXT NOT NULL,
+                    timestamp REAL NOT NULL,
+                    attempts INTEGER DEFAULT 0,
+                    last_attempt REAL,
+                    next_retry REAL NOT NULL,
+                    expires_at REAL NOT NULL,
+                    INDEX idx_recipient (recipient_uid),
+                    INDEX idx_expires (expires_at),
+                    INDEX idx_next_retry (next_retry)
+                )
             """
-            CREATE TABLE IF NOT EXISTS queued_messages (
-                queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                recipient_uid TEXT NOT NULL,
-                sender_uid TEXT NOT NULL,
-                message_type TEXT NOT NULL,
-                message_data TEXT NOT NULL,
-                timestamp REAL NOT NULL,
-                attempts INTEGER DEFAULT 0,
-                last_attempt REAL,
-                next_retry REAL NOT NULL,
-                expires_at REAL NOT NULL,
-                INDEX idx_recipient (recipient_uid),
-                INDEX idx_expires (expires_at),
-                INDEX idx_next_retry (next_retry)
             )
-        """
-        )
 
-        self.conn.commit()
-        logger.info(f"Message queue database initialized: {self.db_path}")
+            self.conn.commit()
+            logger.info(f"Message queue database initialized: {self.db_path}")
 
     def enqueue(
         self, recipient_uid: str, sender_uid: str, message_type: str, message_data: Dict[str, Any]
     ) -> bool:
         """
-        Add message to queue.
+        Add message to queue with thread-safe database access.
 
         Args:
             recipient_uid: Recipient's UID
@@ -136,19 +151,20 @@ class MessageQueue:
             # Encode message data
             message_json = json.dumps(message_data)
 
-            # Insert into database
-            cursor = self.conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO queued_messages
-                (recipient_uid, sender_uid, message_type, message_data,
-                 timestamp, next_retry, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-                (recipient_uid, sender_uid, message_type, message_json, now, now, expires_at),
-            )
+            # Thread-safe database insert
+            with self._db_lock:
+                cursor = self.conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO queued_messages
+                    (recipient_uid, sender_uid, message_type, message_data,
+                     timestamp, next_retry, expires_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                    (recipient_uid, sender_uid, message_type, message_json, now, now, expires_at),
+                )
 
-            self.conn.commit()
+                self.conn.commit()
 
             logger.info(
                 f"Message queued for {recipient_uid} "
@@ -158,12 +174,12 @@ class MessageQueue:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to enqueue message: {e}")
+            logger.error(f"Failed to enqueue message: {e}", exc_info=True)
             return False
 
     def dequeue(self, recipient_uid: str, limit: int = 100) -> List[QueuedMessage]:
         """
-        Get pending messages for recipient.
+        Get pending messages for recipient with thread-safe database access.
 
         Args:
             recipient_uid: Recipient's UID
@@ -175,33 +191,34 @@ class MessageQueue:
         try:
             now = time.time()
 
-            cursor = self.conn.cursor()
-            cursor.execute(
-                """
-                SELECT * FROM queued_messages
-                WHERE recipient_uid = ?
-                AND next_retry <= ?
-                AND expires_at > ?
-                AND attempts < ?
-                ORDER BY timestamp ASC
-                LIMIT ?
-            """,
-                (recipient_uid, now, now, MESSAGE_DELIVERY_RETRY_ATTEMPTS, limit),
-            )
+            with self._db_lock:
+                cursor = self.conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT * FROM queued_messages
+                    WHERE recipient_uid = ?
+                    AND next_retry <= ?
+                    AND expires_at > ?
+                    AND attempts < ?
+                    ORDER BY timestamp ASC
+                    LIMIT ?
+                """,
+                    (recipient_uid, now, now, MESSAGE_DELIVERY_RETRY_ATTEMPTS, limit),
+                )
 
-            messages = [QueuedMessage.from_row(row) for row in cursor.fetchall()]
+                messages = [QueuedMessage.from_row(row) for row in cursor.fetchall()]
 
             logger.debug(f"Dequeued {len(messages)} messages for {recipient_uid}")
 
             return messages
 
         except Exception as e:
-            logger.error(f"Failed to dequeue messages: {e}")
+            logger.error(f"Failed to dequeue messages: {e}", exc_info=True)
             return []
 
     def mark_delivered(self, queue_id: int) -> bool:
         """
-        Mark message as successfully delivered and remove from queue.
+        Mark message as successfully delivered and remove from queue with thread-safe database access.
 
         Args:
             queue_id: Queue ID of delivered message
@@ -210,17 +227,19 @@ class MessageQueue:
             True if successful, False otherwise
         """
         try:
-            cursor = self.conn.cursor()
-            cursor.execute(
-                """
-                DELETE FROM queued_messages WHERE queue_id = ?
-            """,
-                (queue_id,),
-            )
+            with self._db_lock:
+                cursor = self.conn.cursor()
+                cursor.execute(
+                    """
+                    DELETE FROM queued_messages WHERE queue_id = ?
+                """,
+                    (queue_id,),
+                )
 
-            self.conn.commit()
+                self.conn.commit()
+                rowcount = cursor.rowcount
 
-            if cursor.rowcount > 0:
+            if rowcount > 0:
                 logger.info(f"Message {queue_id} marked as delivered and removed")
                 return True
             else:
@@ -228,12 +247,12 @@ class MessageQueue:
                 return False
 
         except Exception as e:
-            logger.error(f"Failed to mark message delivered: {e}")
+            logger.error(f"Failed to mark message delivered: {e}", exc_info=True)
             return False
 
     def mark_failed(self, queue_id: int) -> bool:
         """
-        Mark delivery attempt failed and schedule retry.
+        Mark delivery attempt failed and schedule retry with thread-safe database access.
 
         Args:
             queue_id: Queue ID of failed message
@@ -244,40 +263,41 @@ class MessageQueue:
         try:
             now = time.time()
 
-            cursor = self.conn.cursor()
+            with self._db_lock:
+                cursor = self.conn.cursor()
 
-            # Get current attempts
-            cursor.execute(
-                """
-                SELECT attempts FROM queued_messages WHERE queue_id = ?
-            """,
-                (queue_id,),
-            )
+                # Get current attempts
+                cursor.execute(
+                    """
+                    SELECT attempts FROM queued_messages WHERE queue_id = ?
+                """,
+                    (queue_id,),
+                )
 
-            row = cursor.fetchone()
-            if not row:
-                logger.warning(f"Message {queue_id} not found")
-                return False
+                row = cursor.fetchone()
+                if not row:
+                    logger.warning(f"Message {queue_id} not found")
+                    return False
 
-            attempts = row[0] + 1
+                attempts = row[0] + 1
 
-            # Calculate next retry with exponential backoff
-            backoff = MESSAGE_DELIVERY_RETRY_DELAY * (2 ** (attempts - 1))
-            next_retry = now + backoff
+                # Calculate next retry with exponential backoff
+                backoff = MESSAGE_DELIVERY_RETRY_DELAY * (2 ** (attempts - 1))
+                next_retry = now + backoff
 
-            # Update message
-            cursor.execute(
-                """
-                UPDATE queued_messages
-                SET attempts = ?,
-                    last_attempt = ?,
-                    next_retry = ?
-                WHERE queue_id = ?
-            """,
-                (attempts, now, next_retry, queue_id),
-            )
+                # Update message
+                cursor.execute(
+                    """
+                    UPDATE queued_messages
+                    SET attempts = ?,
+                        last_attempt = ?,
+                        next_retry = ?
+                    WHERE queue_id = ?
+                """,
+                    (attempts, now, next_retry, queue_id),
+                )
 
-            self.conn.commit()
+                self.conn.commit()
 
             logger.info(
                 f"Message {queue_id} delivery failed "
@@ -287,12 +307,12 @@ class MessageQueue:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to mark message failed: {e}")
+            logger.error(f"Failed to mark message failed: {e}", exc_info=True)
             return False
 
     def get_pending_count(self, recipient_uid: str) -> int:
         """
-        Get count of pending messages for recipient.
+        Get count of pending messages for recipient with thread-safe database access.
 
         Args:
             recipient_uid: Recipient's UID
@@ -303,26 +323,28 @@ class MessageQueue:
         try:
             now = time.time()
 
-            cursor = self.conn.cursor()
-            cursor.execute(
-                """
-                SELECT COUNT(*) FROM queued_messages
-                WHERE recipient_uid = ?
-                AND expires_at > ?
-            """,
-                (recipient_uid, now),
-            )
+            with self._db_lock:
+                cursor = self.conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM queued_messages
+                    WHERE recipient_uid = ?
+                    AND expires_at > ?
+                """,
+                    (recipient_uid, now),
+                )
 
-            count = cursor.fetchone()[0]
+                count = cursor.fetchone()[0]
+
             return count
 
         except Exception as e:
-            logger.error(f"Failed to get pending count: {e}")
+            logger.error(f"Failed to get pending count: {e}", exc_info=True)
             return 0
 
     def get_all_recipients(self) -> List[str]:
         """
-        Get list of all recipients with pending messages.
+        Get list of all recipients with pending messages with thread-safe database access.
 
         Returns:
             List of recipient UIDs
@@ -330,25 +352,27 @@ class MessageQueue:
         try:
             now = time.time()
 
-            cursor = self.conn.cursor()
-            cursor.execute(
-                """
-                SELECT DISTINCT recipient_uid FROM queued_messages
-                WHERE expires_at > ?
-            """,
-                (now,),
-            )
+            with self._db_lock:
+                cursor = self.conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT DISTINCT recipient_uid FROM queued_messages
+                    WHERE expires_at > ?
+                """,
+                    (now,),
+                )
 
-            recipients = [row[0] for row in cursor.fetchall()]
+                recipients = [row[0] for row in cursor.fetchall()]
+
             return recipients
 
         except Exception as e:
-            logger.error(f"Failed to get recipients: {e}")
+            logger.error(f"Failed to get recipients: {e}", exc_info=True)
             return []
 
     def cleanup_expired(self) -> int:
         """
-        Remove expired messages from queue.
+        Remove expired messages from queue with thread-safe database access.
 
         Returns:
             Number of messages removed
@@ -356,16 +380,17 @@ class MessageQueue:
         try:
             now = time.time()
 
-            cursor = self.conn.cursor()
-            cursor.execute(
-                """
-                DELETE FROM queued_messages WHERE expires_at <= ?
-            """,
-                (now,),
-            )
+            with self._db_lock:
+                cursor = self.conn.cursor()
+                cursor.execute(
+                    """
+                    DELETE FROM queued_messages WHERE expires_at <= ?
+                """,
+                    (now,),
+                )
 
-            removed = cursor.rowcount
-            self.conn.commit()
+                removed = cursor.rowcount
+                self.conn.commit()
 
             if removed > 0:
                 logger.info(f"Cleaned up {removed} expired messages")
@@ -374,7 +399,7 @@ class MessageQueue:
             return removed
 
         except Exception as e:
-            logger.error(f"Failed to cleanup expired messages: {e}")
+            logger.error(f"Failed to cleanup expired messages: {e}", exc_info=True)
             return 0
 
     def cleanup_if_needed(self):
@@ -384,7 +409,7 @@ class MessageQueue:
 
     def get_statistics(self) -> Dict[str, Any]:
         """
-        Get queue statistics.
+        Get queue statistics with thread-safe database access.
 
         Returns:
             Dictionary with statistics
@@ -392,43 +417,44 @@ class MessageQueue:
         try:
             now = time.time()
 
-            cursor = self.conn.cursor()
+            with self._db_lock:
+                cursor = self.conn.cursor()
 
-            # Total messages
-            cursor.execute("SELECT COUNT(*) FROM queued_messages")
-            total = cursor.fetchone()[0]
+                # Total messages
+                cursor.execute("SELECT COUNT(*) FROM queued_messages")
+                total = cursor.fetchone()[0]
 
-            # Expired messages
-            cursor.execute(
-                """
-                SELECT COUNT(*) FROM queued_messages WHERE expires_at <= ?
-            """,
-                (now,),
-            )
-            expired = cursor.fetchone()[0]
+                # Expired messages
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM queued_messages WHERE expires_at <= ?
+                """,
+                    (now,),
+                )
+                expired = cursor.fetchone()[0]
 
-            # Messages by recipient
-            cursor.execute(
-                """
-                SELECT recipient_uid, COUNT(*) as count
-                FROM queued_messages
-                WHERE expires_at > ?
-                GROUP BY recipient_uid
-                ORDER BY count DESC
-            """,
-                (now,),
-            )
-            by_recipient = {row[0]: row[1] for row in cursor.fetchall()}
+                # Messages by recipient
+                cursor.execute(
+                    """
+                    SELECT recipient_uid, COUNT(*) as count
+                    FROM queued_messages
+                    WHERE expires_at > ?
+                    GROUP BY recipient_uid
+                    ORDER BY count DESC
+                """,
+                    (now,),
+                )
+                by_recipient = {row[0]: row[1] for row in cursor.fetchall()}
 
-            # Failed messages (max attempts)
-            cursor.execute(
-                """
-                SELECT COUNT(*) FROM queued_messages
-                WHERE attempts >= ?
-            """,
-                (MESSAGE_DELIVERY_RETRY_ATTEMPTS,),
-            )
-            failed = cursor.fetchone()[0]
+                # Failed messages (max attempts)
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM queued_messages
+                    WHERE attempts >= ?
+                """,
+                    (MESSAGE_DELIVERY_RETRY_ATTEMPTS,),
+                )
+                failed = cursor.fetchone()[0]
 
             return {
                 "total_messages": total,
@@ -441,15 +467,16 @@ class MessageQueue:
             }
 
         except Exception as e:
-            logger.error(f"Failed to get statistics: {e}")
+            logger.error(f"Failed to get statistics: {e}", exc_info=True)
             return {}
 
     def close(self) -> None:
-        """Close database connection."""
-        if self.conn:
-            self.conn.close()
-            self.conn = None
-            logger.debug("Message queue database closed")
+        """Close database connection with thread-safe access."""
+        with self._db_lock:
+            if self.conn:
+                self.conn.close()
+                self.conn = None
+                logger.debug("Message queue database closed")
 
     def __enter__(self) -> "MessageQueue":
         """Enter context manager."""
