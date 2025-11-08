@@ -12,24 +12,23 @@ Version: 2.0.0
 import asyncio
 import hashlib
 import logging
-import os
 import time
-from pathlib import Path
-from typing import Callable, Dict, Optional, List
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Dict, List, Optional
 
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 from .constants import (
     FILE_CHUNK_SIZE,
-    MAX_FILE_SIZE,
-    FILE_TRANSFER_TIMEOUT,
     FILE_TRANSFER_RETRY_ATTEMPTS,
     FILE_TRANSFER_RETRY_DELAY,
+    FILE_TRANSFER_TIMEOUT,
     KEY_SIZE,
+    MAX_FILE_SIZE,
     NONCE_SIZE,
 )
-from .errors import FileTransferError, ErrorCode
+from .errors import ErrorCode, FileTransferError
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +45,7 @@ class FileMetadata:
         total_chunks: Total number of chunks
         transfer_id: Unique transfer identifier
     """
+
     filename: str
     size: int
     checksum: str
@@ -63,6 +63,7 @@ class ChunkInfo:
         data: Chunk data (encrypted)
         checksum: SHA-256 checksum of decrypted chunk
     """
+
     chunk_number: int
     data: bytes
     checksum: str
@@ -88,7 +89,7 @@ class FileTransferSession:
         self,
         transfer_id: str,
         encryption_key: bytes,
-        progress_callback: Optional[Callable[[int, int], None]] = None
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ):
         """Initialize a file transfer session.
 
@@ -102,8 +103,7 @@ class FileTransferSession:
         """
         if len(encryption_key) != KEY_SIZE:
             raise FileTransferError(
-                ErrorCode.E600_FILE_TRANSFER_ERROR,
-                f"Encryption key must be {KEY_SIZE} bytes"
+                ErrorCode.E600_FILE_TRANSFER_ERROR, f"Encryption key must be {KEY_SIZE} bytes"
             )
 
         self.transfer_id = transfer_id
@@ -129,16 +129,10 @@ class FileTransferSession:
             FileTransferError: If file is invalid or too large
         """
         if not file_path.exists():
-            raise FileTransferError(
-                ErrorCode.E003_FILE_NOT_FOUND,
-                f"File not found: {file_path}"
-            )
+            raise FileTransferError(ErrorCode.E003_FILE_NOT_FOUND, f"File not found: {file_path}")
 
         if not file_path.is_file():
-            raise FileTransferError(
-                ErrorCode.E002_INVALID_ARGUMENT,
-                f"Not a file: {file_path}"
-            )
+            raise FileTransferError(ErrorCode.E002_INVALID_ARGUMENT, f"Not a file: {file_path}")
 
         file_size = file_path.stat().st_size
 
@@ -146,7 +140,7 @@ class FileTransferSession:
             raise FileTransferError(
                 ErrorCode.E601_FILE_TOO_LARGE,
                 f"File too large: {file_size} > {MAX_FILE_SIZE}",
-                {"size": file_size, "max_size": MAX_FILE_SIZE}
+                {"size": file_size, "max_size": MAX_FILE_SIZE},
             )
 
         # Calculate checksum
@@ -161,13 +155,10 @@ class FileTransferSession:
             checksum=checksum,
             chunk_size=FILE_CHUNK_SIZE,
             total_chunks=total_chunks,
-            transfer_id=self.transfer_id
+            transfer_id=self.transfer_id,
         )
 
-        logger.info(
-            f"Chunked file: {file_path.name}, "
-            f"size={file_size}, chunks={total_chunks}"
-        )
+        logger.info(f"Chunked file: {file_path.name}, " f"size={file_size}, chunks={total_chunks}")
 
         return self.metadata
 
@@ -181,7 +172,7 @@ class FileTransferSession:
             Hex-encoded checksum
         """
         sha256 = hashlib.sha256()
-        with open(file_path, 'rb') as f:
+        with open(file_path, "rb") as f:
             while True:
                 data = f.read(FILE_CHUNK_SIZE)
                 if not data:
@@ -207,7 +198,7 @@ class FileTransferSession:
 
             # Use chunk number as part of the nonce to ensure uniqueness
             nonce = hashlib.sha256(
-                self.transfer_id.encode() + chunk_number.to_bytes(8, 'big')
+                self.transfer_id.encode() + chunk_number.to_bytes(8, "big")
             ).digest()[:NONCE_SIZE]
 
             # Encrypt chunk
@@ -220,7 +211,7 @@ class FileTransferSession:
             raise FileTransferError(
                 ErrorCode.E602_CHUNK_FAILED,
                 f"Chunk encryption failed: {e}",
-                {"chunk": chunk_number, "error": str(e)}
+                {"chunk": chunk_number, "error": str(e)},
             )
 
     def decrypt_chunk(self, encrypted_data: bytes, chunk_number: int) -> bytes:
@@ -238,10 +229,7 @@ class FileTransferSession:
         """
         try:
             if len(encrypted_data) < NONCE_SIZE:
-                raise FileTransferError(
-                    ErrorCode.E606_INVALID_CHUNK,
-                    "Encrypted data too short"
-                )
+                raise FileTransferError(ErrorCode.E606_INVALID_CHUNK, "Encrypted data too short")
 
             nonce = encrypted_data[:NONCE_SIZE]
             ciphertext = encrypted_data[NONCE_SIZE:]
@@ -255,13 +243,11 @@ class FileTransferSession:
             raise FileTransferError(
                 ErrorCode.E602_CHUNK_FAILED,
                 f"Chunk decryption failed: {e}",
-                {"chunk": chunk_number, "error": str(e)}
+                {"chunk": chunk_number, "error": str(e)},
             )
 
     async def send_file(
-        self,
-        file_path: Path,
-        send_callback: Callable[[ChunkInfo], asyncio.Future]
+        self, file_path: Path, send_callback: Callable[[ChunkInfo], asyncio.Future]
     ) -> bool:
         """Send a file by chunks.
 
@@ -281,7 +267,7 @@ class FileTransferSession:
         logger.info(f"Starting file transfer: {metadata.filename}")
 
         try:
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 for chunk_num in range(metadata.total_chunks):
                     # Read chunk
                     chunk_data = f.read(FILE_CHUNK_SIZE)
@@ -297,9 +283,7 @@ class FileTransferSession:
 
                     # Create chunk info
                     chunk_info = ChunkInfo(
-                        chunk_number=chunk_num,
-                        data=encrypted_chunk,
-                        checksum=chunk_checksum
+                        chunk_number=chunk_num, data=encrypted_chunk, checksum=chunk_checksum
                     )
 
                     # Send chunk with retry
@@ -307,8 +291,7 @@ class FileTransferSession:
                     while retry_count < FILE_TRANSFER_RETRY_ATTEMPTS:
                         try:
                             await asyncio.wait_for(
-                                send_callback(chunk_info),
-                                timeout=FILE_TRANSFER_TIMEOUT
+                                send_callback(chunk_info), timeout=FILE_TRANSFER_TIMEOUT
                             )
                             break
                         except asyncio.TimeoutError:
@@ -316,11 +299,9 @@ class FileTransferSession:
                             if retry_count >= FILE_TRANSFER_RETRY_ATTEMPTS:
                                 raise FileTransferError(
                                     ErrorCode.E604_TRANSFER_TIMEOUT,
-                                    f"Chunk {chunk_num} send timeout after retries"
+                                    f"Chunk {chunk_num} send timeout after retries",
                                 )
-                            logger.warning(
-                                f"Chunk {chunk_num} timeout, retry {retry_count}"
-                            )
+                            logger.warning(f"Chunk {chunk_num} timeout, retry {retry_count}")
                             await asyncio.sleep(FILE_TRANSFER_RETRY_DELAY)
 
                     # Mark as sent
@@ -330,15 +311,10 @@ class FileTransferSession:
                     if self.progress_callback:
                         self.progress_callback(chunk_num + 1, metadata.total_chunks)
 
-                    logger.debug(
-                        f"Sent chunk {chunk_num + 1}/{metadata.total_chunks}"
-                    )
+                    logger.debug(f"Sent chunk {chunk_num + 1}/{metadata.total_chunks}")
 
             elapsed = time.time() - self.start_time
-            logger.info(
-                f"File transfer completed: {metadata.filename} "
-                f"in {elapsed:.2f}s"
-            )
+            logger.info(f"File transfer completed: {metadata.filename} " f"in {elapsed:.2f}s")
 
             return True
 
@@ -346,9 +322,7 @@ class FileTransferSession:
             raise
         except Exception as e:
             raise FileTransferError(
-                ErrorCode.E600_FILE_TRANSFER_ERROR,
-                f"File transfer failed: {e}",
-                {"error": str(e)}
+                ErrorCode.E600_FILE_TRANSFER_ERROR, f"File transfer failed: {e}", {"error": str(e)}
             )
 
     def receive_chunk(self, chunk_info: ChunkInfo) -> None:
@@ -362,8 +336,7 @@ class FileTransferSession:
         """
         if self.metadata is None:
             raise FileTransferError(
-                ErrorCode.E600_FILE_TRANSFER_ERROR,
-                "No metadata set for receiving"
+                ErrorCode.E600_FILE_TRANSFER_ERROR, "No metadata set for receiving"
             )
 
         chunk_num = chunk_info.chunk_number
@@ -373,7 +346,7 @@ class FileTransferSession:
             raise FileTransferError(
                 ErrorCode.E606_INVALID_CHUNK,
                 f"Invalid chunk number: {chunk_num}",
-                {"chunk": chunk_num, "total": self.metadata.total_chunks}
+                {"chunk": chunk_num, "total": self.metadata.total_chunks},
             )
 
         # Decrypt chunk
@@ -385,7 +358,7 @@ class FileTransferSession:
             raise FileTransferError(
                 ErrorCode.E603_CHECKSUM_MISMATCH,
                 f"Chunk {chunk_num} checksum mismatch",
-                {"expected": chunk_info.checksum, "actual": actual_checksum}
+                {"expected": chunk_info.checksum, "actual": actual_checksum},
             )
 
         # Store chunk
@@ -393,14 +366,9 @@ class FileTransferSession:
 
         # Update progress
         if self.progress_callback:
-            self.progress_callback(
-                len(self.chunks_received),
-                self.metadata.total_chunks
-            )
+            self.progress_callback(len(self.chunks_received), self.metadata.total_chunks)
 
-        logger.debug(
-            f"Received chunk {chunk_num + 1}/{self.metadata.total_chunks}"
-        )
+        logger.debug(f"Received chunk {chunk_num + 1}/{self.metadata.total_chunks}")
 
     def is_complete(self) -> bool:
         """Check if all chunks have been received.
@@ -424,7 +392,7 @@ class FileTransferSession:
 
         all_chunks = set(range(self.metadata.total_chunks))
         received = set(self.chunks_received.keys())
-        return sorted(list(all_chunks - received))
+        return sorted(all_chunks - received)
 
     def reconstruct_file(self, output_path: Path) -> None:
         """Reconstruct the file from received chunks.
@@ -440,14 +408,11 @@ class FileTransferSession:
             raise FileTransferError(
                 ErrorCode.E600_FILE_TRANSFER_ERROR,
                 f"Cannot reconstruct: missing {len(missing)} chunks",
-                {"missing_chunks": missing[:10]}  # Show first 10
+                {"missing_chunks": missing[:10]},  # Show first 10
             )
 
         if self.metadata is None:
-            raise FileTransferError(
-                ErrorCode.E600_FILE_TRANSFER_ERROR,
-                "No metadata available"
-            )
+            raise FileTransferError(ErrorCode.E600_FILE_TRANSFER_ERROR, "No metadata available")
 
         logger.info(f"Reconstructing file: {output_path}")
 
@@ -456,7 +421,7 @@ class FileTransferSession:
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Write chunks in order
-            with open(output_path, 'wb') as f:
+            with open(output_path, "wb") as f:
                 for chunk_num in range(self.metadata.total_chunks):
                     chunk_data = self.chunks_received[chunk_num]
                     f.write(chunk_data)
@@ -469,15 +434,11 @@ class FileTransferSession:
                 raise FileTransferError(
                     ErrorCode.E603_CHECKSUM_MISMATCH,
                     "Reconstructed file checksum mismatch",
-                    {
-                        "expected": self.metadata.checksum,
-                        "actual": actual_checksum
-                    }
+                    {"expected": self.metadata.checksum, "actual": actual_checksum},
                 )
 
             logger.info(
-                f"File reconstructed successfully: {output_path} "
-                f"({self.metadata.size} bytes)"
+                f"File reconstructed successfully: {output_path} " f"({self.metadata.size} bytes)"
             )
 
         except FileTransferError:
@@ -486,7 +447,7 @@ class FileTransferSession:
             raise FileTransferError(
                 ErrorCode.E600_FILE_TRANSFER_ERROR,
                 f"File reconstruction failed: {e}",
-                {"error": str(e)}
+                {"error": str(e)},
             )
 
     def get_progress(self) -> Dict:

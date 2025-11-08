@@ -10,31 +10,28 @@ Version: 2.0.0
 """
 
 import asyncio
-import gzip
-import json
 import logging
-import shutil
 import tarfile
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from .constants import (
-    BACKUP_RETENTION_DAYS,
-    BACKUP_MAX_COUNT,
     BACKUP_COMPRESSION_LEVEL,
+    BACKUP_DIR,
+    BACKUP_MAX_COUNT,
+    BACKUP_RETENTION_DAYS,
     BACKUP_SCHEDULE_INTERVAL,
     DEFAULT_DATA_DIR,
-    BACKUP_DIR,
     KEY_SIZE,
     NONCE_SIZE,
     SALT_SIZE,
 )
-from .errors import JarvisError, ErrorCode
+from .errors import ErrorCode, JarvisError
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +55,7 @@ class BackupManager:
         data_dir: Optional[Path] = None,
         backup_dir: Optional[Path] = None,
         retention_days: int = BACKUP_RETENTION_DAYS,
-        max_backups: int = BACKUP_MAX_COUNT
+        max_backups: int = BACKUP_MAX_COUNT,
     ):
         """Initialize backup manager.
 
@@ -119,7 +116,7 @@ class BackupManager:
                 # Add all files from data directory
                 for item in self.data_dir.iterdir():
                     # Skip backups directory and temp files
-                    if item.name == BACKUP_DIR or item.name.startswith('.'):
+                    if item.name == BACKUP_DIR or item.name.startswith("."):
                         continue
 
                     # Add to archive
@@ -136,9 +133,7 @@ class BackupManager:
             # Get backup size
             backup_size = backup_path.stat().st_size
 
-            logger.info(
-                f"Backup created: {backup_name} ({backup_size} bytes)"
-            )
+            logger.info(f"Backup created: {backup_name} ({backup_size} bytes)")
 
             # Clean up old backups
             self.delete_old_backups()
@@ -147,13 +142,11 @@ class BackupManager:
 
         except Exception as e:
             # Clean up temp files on error
-            if 'temp_backup' in locals() and Path(temp_backup).exists():
+            if "temp_backup" in locals() and Path(temp_backup).exists():
                 Path(temp_backup).unlink()
 
             raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                f"Backup creation failed: {e}",
-                {"error": str(e)}
+                ErrorCode.E001_UNKNOWN_ERROR, f"Backup creation failed: {e}", {"error": str(e)}
             )
 
     def _encrypt_backup(self, source: Path, dest: Path, password: str) -> None:
@@ -175,7 +168,7 @@ class BackupManager:
             key = self._derive_key(password, salt)
 
             # Read source file
-            with open(source, 'rb') as f:
+            with open(source, "rb") as f:
                 plaintext = f.read()
 
             # Encrypt
@@ -184,7 +177,7 @@ class BackupManager:
             ciphertext = cipher.encrypt(nonce, plaintext, None)
 
             # Write encrypted file: salt + nonce + ciphertext
-            with open(dest, 'wb') as f:
+            with open(dest, "wb") as f:
                 f.write(salt)
                 f.write(nonce)
                 f.write(ciphertext)
@@ -193,9 +186,7 @@ class BackupManager:
 
         except Exception as e:
             raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                f"Backup encryption failed: {e}",
-                {"error": str(e)}
+                ErrorCode.E001_UNKNOWN_ERROR, f"Backup encryption failed: {e}", {"error": str(e)}
             )
 
     def _decrypt_backup(self, source: Path, dest: Path, password: str) -> None:
@@ -211,7 +202,7 @@ class BackupManager:
         """
         try:
             # Read encrypted file
-            with open(source, 'rb') as f:
+            with open(source, "rb") as f:
                 salt = f.read(SALT_SIZE)
                 nonce = f.read(NONCE_SIZE)
                 ciphertext = f.read()
@@ -224,16 +215,14 @@ class BackupManager:
             plaintext = cipher.decrypt(nonce, ciphertext, None)
 
             # Write decrypted file
-            with open(dest, 'wb') as f:
+            with open(dest, "wb") as f:
                 f.write(plaintext)
 
             logger.debug(f"Decrypted backup: {source.name}")
 
         except Exception as e:
             raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                f"Backup decryption failed: {e}",
-                {"error": str(e)}
+                ErrorCode.E001_UNKNOWN_ERROR, f"Backup decryption failed: {e}", {"error": str(e)}
             )
 
     def _derive_key(self, password: str, salt: bytes) -> bytes:
@@ -261,6 +250,7 @@ class BackupManager:
             Random salt bytes
         """
         import secrets
+
         return secrets.token_bytes(SALT_SIZE)
 
     def _generate_nonce(self) -> bytes:
@@ -270,6 +260,7 @@ class BackupManager:
             Random nonce bytes
         """
         import secrets
+
         return secrets.token_bytes(NONCE_SIZE)
 
     def restore_backup(self, backup_path: Path, password: Optional[str] = None) -> None:
@@ -284,19 +275,17 @@ class BackupManager:
         """
         if not backup_path.exists():
             raise JarvisError(
-                ErrorCode.E003_FILE_NOT_FOUND,
-                f"Backup file not found: {backup_path}"
+                ErrorCode.E003_FILE_NOT_FOUND, f"Backup file not found: {backup_path}"
             )
 
         logger.info(f"Restoring from backup: {backup_path.name}")
 
         try:
             # Decrypt if needed
-            if backup_path.suffix == '.enc':
+            if backup_path.suffix == ".enc":
                 if not password:
                     raise JarvisError(
-                        ErrorCode.E002_INVALID_ARGUMENT,
-                        "Password required for encrypted backup"
+                        ErrorCode.E002_INVALID_ARGUMENT, "Password required for encrypted backup"
                     )
 
                 temp_decrypted = self.backup_dir / f"temp_decrypt_{backup_path.stem}"
@@ -312,7 +301,7 @@ class BackupManager:
                 logger.info("Backup extracted successfully")
 
             # Clean up temp files
-            if backup_path.suffix == '.enc' and extract_file.exists():
+            if backup_path.suffix == ".enc" and extract_file.exists():
                 extract_file.unlink()
 
             logger.info(f"Backup restored: {backup_path.name}")
@@ -321,9 +310,7 @@ class BackupManager:
             raise
         except Exception as e:
             raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                f"Backup restoration failed: {e}",
-                {"error": str(e)}
+                ErrorCode.E001_UNKNOWN_ERROR, f"Backup restoration failed: {e}", {"error": str(e)}
             )
 
     def list_backups(self) -> List[Dict]:
@@ -339,13 +326,15 @@ class BackupManager:
                 continue
 
             stat = backup_file.stat()
-            backups.append({
-                "filename": backup_file.name,
-                "path": str(backup_file),
-                "size": stat.st_size,
-                "created": stat.st_mtime,
-                "encrypted": backup_file.suffix == '.enc',
-            })
+            backups.append(
+                {
+                    "filename": backup_file.name,
+                    "path": str(backup_file),
+                    "size": stat.st_size,
+                    "created": stat.st_mtime,
+                    "encrypted": backup_file.suffix == ".enc",
+                }
+            )
 
         return backups
 
@@ -366,23 +355,23 @@ class BackupManager:
 
         # Delete by age
         for backup in backups:
-            age = now - backup['created']
+            age = now - backup["created"]
             if age > retention_seconds:
-                backup_path = Path(backup['path'])
+                backup_path = Path(backup["path"])
                 backup_path.unlink()
                 logger.info(f"Deleted old backup: {backup['filename']}")
                 deleted_count += 1
 
         # Delete excess backups (keep max_backups newest)
-        remaining = [b for b in backups if Path(b['path']).exists()]
+        remaining = [b for b in backups if Path(b["path"]).exists()]
         if len(remaining) > self.max_backups:
             # Sort by creation time
-            remaining.sort(key=lambda x: x['created'])
+            remaining.sort(key=lambda x: x["created"])
 
             # Delete oldest excess backups
             excess = len(remaining) - self.max_backups
             for backup in remaining[:excess]:
-                backup_path = Path(backup['path'])
+                backup_path = Path(backup["path"])
                 backup_path.unlink()
                 logger.info(f"Deleted excess backup: {backup['filename']}")
                 deleted_count += 1
@@ -407,11 +396,10 @@ class BackupManager:
         """
         try:
             # Decrypt if needed
-            if backup_path.suffix == '.enc':
+            if backup_path.suffix == ".enc":
                 if not password:
                     raise JarvisError(
-                        ErrorCode.E002_INVALID_ARGUMENT,
-                        "Password required for encrypted backup"
+                        ErrorCode.E002_INVALID_ARGUMENT, "Password required for encrypted backup"
                     )
 
                 temp_decrypted = self.backup_dir / f"temp_verify_{backup_path.stem}"
@@ -426,7 +414,7 @@ class BackupManager:
                 logger.debug(f"Backup contains {len(members)} items")
 
             # Clean up temp files
-            if backup_path.suffix == '.enc' and verify_file.exists():
+            if backup_path.suffix == ".enc" and verify_file.exists():
                 verify_file.unlink()
 
             logger.info(f"Backup verified: {backup_path.name}")
@@ -437,9 +425,7 @@ class BackupManager:
             return False
 
     async def schedule_backup(
-        self,
-        interval: int = BACKUP_SCHEDULE_INTERVAL,
-        password: Optional[str] = None
+        self, interval: int = BACKUP_SCHEDULE_INTERVAL, password: Optional[str] = None
     ) -> None:
         """Schedule automatic backups.
 
@@ -461,9 +447,7 @@ class BackupManager:
                 logger.error(f"Scheduled backup failed: {e}")
 
     def start_scheduled_backups(
-        self,
-        interval: int = BACKUP_SCHEDULE_INTERVAL,
-        password: Optional[str] = None
+        self, interval: int = BACKUP_SCHEDULE_INTERVAL, password: Optional[str] = None
     ) -> None:
         """Start scheduled backups as an asyncio task.
 
@@ -475,9 +459,7 @@ class BackupManager:
             logger.warning("Scheduled backups already running")
             return
 
-        self.schedule_task = asyncio.create_task(
-            self.schedule_backup(interval, password)
-        )
+        self.schedule_task = asyncio.create_task(self.schedule_backup(interval, password))
         logger.info("Started scheduled backup task")
 
     def stop_scheduled_backups(self) -> None:
@@ -494,8 +476,8 @@ class BackupManager:
         """
         backups = self.list_backups()
 
-        total_size = sum(b['size'] for b in backups)
-        encrypted_count = sum(1 for b in backups if b['encrypted'])
+        total_size = sum(b["size"] for b in backups)
+        encrypted_count = sum(1 for b in backups if b["encrypted"])
 
         return {
             "total_backups": len(backups),

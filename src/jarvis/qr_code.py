@@ -16,7 +16,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
-from .errors import JarvisError, ErrorCode
+from .errors import ErrorCode, JarvisError
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 try:
     import qrcode
     from qrcode.image.pure import PyPNGOrPILImage
+
     QRCODE_AVAILABLE = True
 except ImportError:
     QRCODE_AVAILABLE = False
@@ -31,6 +32,7 @@ except ImportError:
 
 try:
     from PIL import Image
+
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
@@ -38,11 +40,8 @@ except ImportError:
 
 
 def generate_qr_code(
-    data: str,
-    error_correction: str = 'M',
-    box_size: int = 10,
-    border: int = 4
-) -> 'qrcode.QRCode':
+    data: str, error_correction: str = "M", box_size: int = 10, border: int = 4
+) -> "qrcode.QRCode":
     """Generate a QR code from data.
 
     Args:
@@ -60,15 +59,15 @@ def generate_qr_code(
     if not QRCODE_AVAILABLE:
         raise JarvisError(
             ErrorCode.E001_UNKNOWN_ERROR,
-            "QR code generation not available - install qrcode and pillow"
+            "QR code generation not available - install qrcode and pillow",
         )
 
     # Map error correction levels
     error_levels = {
-        'L': qrcode.constants.ERROR_CORRECT_L,  # 7% correction
-        'M': qrcode.constants.ERROR_CORRECT_M,  # 15% correction
-        'Q': qrcode.constants.ERROR_CORRECT_Q,  # 25% correction
-        'H': qrcode.constants.ERROR_CORRECT_H,  # 30% correction
+        "L": qrcode.constants.ERROR_CORRECT_L,  # 7% correction
+        "M": qrcode.constants.ERROR_CORRECT_M,  # 15% correction
+        "Q": qrcode.constants.ERROR_CORRECT_Q,  # 25% correction
+        "H": qrcode.constants.ERROR_CORRECT_H,  # 30% correction
     }
 
     error_level = error_levels.get(error_correction, qrcode.constants.ERROR_CORRECT_M)
@@ -89,13 +88,11 @@ def generate_qr_code(
 
     except Exception as e:
         raise JarvisError(
-            ErrorCode.E001_UNKNOWN_ERROR,
-            f"QR code generation failed: {e}",
-            {"error": str(e)}
+            ErrorCode.E001_UNKNOWN_ERROR, f"QR code generation failed: {e}", {"error": str(e)}
         )
 
 
-def display_qr_terminal(qr: 'qrcode.QRCode') -> str:
+def display_qr_terminal(qr: "qrcode.QRCode") -> str:
     """Display QR code as ASCII art for terminal.
 
     Args:
@@ -124,10 +121,7 @@ def display_qr_terminal(qr: 'qrcode.QRCode') -> str:
 
 
 def export_qr_png(
-    qr: 'qrcode.QRCode',
-    output_path: Path,
-    fill_color: str = "black",
-    back_color: str = "white"
+    qr: "qrcode.QRCode", output_path: Path, fill_color: str = "black", back_color: str = "white"
 ) -> None:
     """Export QR code as PNG image.
 
@@ -141,10 +135,7 @@ def export_qr_png(
         JarvisError: If PNG export is not available or fails
     """
     if not PIL_AVAILABLE:
-        raise JarvisError(
-            ErrorCode.E001_UNKNOWN_ERROR,
-            "PNG export not available - install pillow"
-        )
+        raise JarvisError(ErrorCode.E001_UNKNOWN_ERROR, "PNG export not available - install pillow")
 
     try:
         # Create image
@@ -160,9 +151,7 @@ def export_qr_png(
 
     except Exception as e:
         raise JarvisError(
-            ErrorCode.E001_UNKNOWN_ERROR,
-            f"PNG export failed: {e}",
-            {"error": str(e)}
+            ErrorCode.E001_UNKNOWN_ERROR, f"PNG export failed: {e}", {"error": str(e)}
         )
 
 
@@ -171,7 +160,7 @@ def encode_contact_data(
     public_key: bytes,
     address: Optional[str] = None,
     port: Optional[int] = None,
-    display_name: Optional[str] = None
+    display_name: Optional[str] = None,
 ) -> str:
     """Encode contact data for QR code sharing.
 
@@ -203,7 +192,7 @@ def encode_contact_data(
         contact["display_name"] = display_name
 
     # Encode as JSON
-    json_data = json.dumps(contact, separators=(',', ':'))
+    json_data = json.dumps(contact, separators=(",", ":"))
 
     logger.debug(f"Encoded contact data: {len(json_data)} bytes")
     return json_data
@@ -227,15 +216,11 @@ def decode_contact_data(encoded_data: str) -> Dict:
 
         # Validate required fields
         if contact.get("type") != "jarvis_contact":
-            raise JarvisError(
-                ErrorCode.E002_INVALID_ARGUMENT,
-                "Invalid contact data: wrong type"
-            )
+            raise JarvisError(ErrorCode.E002_INVALID_ARGUMENT, "Invalid contact data: wrong type")
 
         if "username" not in contact or "public_key" not in contact:
             raise JarvisError(
-                ErrorCode.E002_INVALID_ARGUMENT,
-                "Invalid contact data: missing required fields"
+                ErrorCode.E002_INVALID_ARGUMENT, "Invalid contact data: missing required fields"
             )
 
         # Decode public key
@@ -248,15 +233,13 @@ def decode_contact_data(encoded_data: str) -> Dict:
         raise JarvisError(
             ErrorCode.E002_INVALID_ARGUMENT,
             f"Invalid contact data: JSON parse error: {e}",
-            {"error": str(e)}
+            {"error": str(e)},
         )
     except JarvisError:
         raise
     except Exception as e:
         raise JarvisError(
-            ErrorCode.E001_UNKNOWN_ERROR,
-            f"Failed to decode contact data: {e}",
-            {"error": str(e)}
+            ErrorCode.E001_UNKNOWN_ERROR, f"Failed to decode contact data: {e}", {"error": str(e)}
         )
 
 
@@ -267,7 +250,7 @@ def create_contact_qr(
     port: Optional[int] = None,
     display_name: Optional[str] = None,
     output_path: Optional[Path] = None,
-    show_terminal: bool = True
+    show_terminal: bool = True,
 ) -> str:
     """Create QR code for contact sharing.
 
@@ -287,12 +270,10 @@ def create_contact_qr(
         JarvisError: If QR code creation fails
     """
     # Encode contact data
-    contact_data = encode_contact_data(
-        username, public_key, address, port, display_name
-    )
+    contact_data = encode_contact_data(username, public_key, address, port, display_name)
 
     # Generate QR code
-    qr = generate_qr_code(contact_data, error_correction='M')
+    qr = generate_qr_code(contact_data, error_correction="M")
 
     # Export to PNG if requested
     if output_path:
@@ -332,7 +313,7 @@ def scan_qr_code(image_path: Path) -> str:
     raise JarvisError(
         ErrorCode.E001_UNKNOWN_ERROR,
         "QR code scanning not yet implemented. "
-        "Contact data can be imported manually or via file."
+        "Contact data can be imported manually or via file.",
     )
 
 
@@ -349,6 +330,7 @@ def create_example_qr(username: str = "example_user") -> None:
 
     # Generate example public key (32 bytes)
     import secrets
+
     example_key = secrets.token_bytes(32)
 
     # Create QR code
@@ -358,7 +340,7 @@ def create_example_qr(username: str = "example_user") -> None:
         address="192.168.1.100",
         port=5000,
         display_name="Example User",
-        show_terminal=True
+        show_terminal=True,
     )
 
     print("\nExample Contact QR Code:")

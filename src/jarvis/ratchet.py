@@ -13,15 +13,14 @@ Author: orpheus497
 Version: 2.0.0
 """
 
-import hashlib
 import logging
 import secrets
 from typing import Dict, Optional, Tuple
 
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from .constants import KEY_SIZE, NONCE_SIZE, RATCHET_MAX_SKIP
 from .errors import CryptoError, ErrorCode
@@ -65,8 +64,7 @@ class RatchetState:
         """Generate a new Diffie-Hellman key pair."""
         self.dh_private = x25519.X25519PrivateKey.generate()
         self.dh_public = self.dh_private.public_key().public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw
+            encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
         )
 
     def perform_dh(self, remote_public: bytes) -> bytes:
@@ -82,10 +80,7 @@ class RatchetState:
             CryptoError: If DH operation fails
         """
         if self.dh_private is None:
-            raise CryptoError(
-                ErrorCode.E103_INVALID_KEY,
-                "No DH private key available"
-            )
+            raise CryptoError(ErrorCode.E103_INVALID_KEY, "No DH private key available")
 
         try:
             remote_key = x25519.X25519PublicKey.from_public_bytes(remote_public)
@@ -93,9 +88,7 @@ class RatchetState:
             return shared_secret
         except Exception as e:
             raise CryptoError(
-                ErrorCode.E107_RATCHET_ERROR,
-                f"DH exchange failed: {e}",
-                {"error": str(e)}
+                ErrorCode.E107_RATCHET_ERROR, f"DH exchange failed: {e}", {"error": str(e)}
             )
 
 
@@ -117,10 +110,7 @@ class RatchetSession:
             CryptoError: If initialization fails
         """
         if len(shared_secret) != KEY_SIZE:
-            raise CryptoError(
-                ErrorCode.E103_INVALID_KEY,
-                f"Shared secret must be {KEY_SIZE} bytes"
-            )
+            raise CryptoError(ErrorCode.E103_INVALID_KEY, f"Shared secret must be {KEY_SIZE} bytes")
 
         self.state = RatchetState()
         self.state.generate_dh_keypair()
@@ -150,12 +140,7 @@ class RatchetSession:
         Returns:
             Tuple of (new_root_key, chain_key)
         """
-        kdf = HKDF(
-            algorithm=hashes.SHA256(),
-            length=64,
-            salt=root_key,
-            info=b"ratchet-root"
-        )
+        kdf = HKDF(algorithm=hashes.SHA256(), length=64, salt=root_key, info=b"ratchet-root")
         output = kdf.derive(dh_output)
         return output[:32], output[32:]
 
@@ -172,19 +157,13 @@ class RatchetSession:
         """
         # Derive message key
         msg_kdf = HKDF(
-            algorithm=hashes.SHA256(),
-            length=KEY_SIZE,
-            salt=chain_key,
-            info=b"ratchet-message"
+            algorithm=hashes.SHA256(), length=KEY_SIZE, salt=chain_key, info=b"ratchet-message"
         )
         message_key = msg_kdf.derive(b"\x01")
 
         # Derive next chain key
         chain_kdf = HKDF(
-            algorithm=hashes.SHA256(),
-            length=KEY_SIZE,
-            salt=chain_key,
-            info=b"ratchet-chain"
+            algorithm=hashes.SHA256(), length=KEY_SIZE, salt=chain_key, info=b"ratchet-chain"
         )
         new_chain_key = chain_kdf.derive(b"\x02")
 
@@ -200,12 +179,7 @@ class RatchetSession:
         Returns:
             Derived chain key
         """
-        kdf = HKDF(
-            algorithm=hashes.SHA256(),
-            length=KEY_SIZE,
-            salt=b"",
-            info=info
-        )
+        kdf = HKDF(algorithm=hashes.SHA256(), length=KEY_SIZE, salt=b"", info=info)
         return kdf.derive(key_material)
 
     def _dh_ratchet_step(self, remote_public: bytes) -> None:
@@ -222,8 +196,7 @@ class RatchetSession:
 
         # Derive new root key and receive chain key
         self.state.root_key, self.state.recv_chain_key = self._kdf_rk(
-            self.state.root_key,
-            dh_output
+            self.state.root_key, dh_output
         )
 
         # Update remote public key
@@ -237,8 +210,7 @@ class RatchetSession:
 
         # Derive new root key and send chain key
         self.state.root_key, self.state.send_chain_key = self._kdf_rk(
-            self.state.root_key,
-            dh_output
+            self.state.root_key, dh_output
         )
 
         # Reset message counters
@@ -261,15 +233,10 @@ class RatchetSession:
             CryptoError: If encryption fails
         """
         if self.state.send_chain_key is None:
-            raise CryptoError(
-                ErrorCode.E101_ENCRYPTION_FAILED,
-                "Send chain key not initialized"
-            )
+            raise CryptoError(ErrorCode.E101_ENCRYPTION_FAILED, "Send chain key not initialized")
 
         # Derive message key
-        self.state.send_chain_key, message_key = self._kdf_ck(
-            self.state.send_chain_key
-        )
+        self.state.send_chain_key, message_key = self._kdf_ck(self.state.send_chain_key)
 
         # Encrypt with message key
         try:
@@ -294,15 +261,10 @@ class RatchetSession:
             raise CryptoError(
                 ErrorCode.E101_ENCRYPTION_FAILED,
                 f"Message encryption failed: {e}",
-                {"error": str(e)}
+                {"error": str(e)},
             )
 
-    def decrypt_message(
-        self,
-        ciphertext: bytes,
-        dh_public: bytes,
-        msg_number: int
-    ) -> bytes:
+    def decrypt_message(self, ciphertext: bytes, dh_public: bytes, msg_number: int) -> bytes:
         """Decrypt a message using the Double Ratchet.
 
         Args:
@@ -332,14 +294,9 @@ class RatchetSession:
 
         # Derive message key
         if self.state.recv_chain_key is None:
-            raise CryptoError(
-                ErrorCode.E102_DECRYPTION_FAILED,
-                "Receive chain key not initialized"
-            )
+            raise CryptoError(ErrorCode.E102_DECRYPTION_FAILED, "Receive chain key not initialized")
 
-        self.state.recv_chain_key, message_key = self._kdf_ck(
-            self.state.recv_chain_key
-        )
+        self.state.recv_chain_key, message_key = self._kdf_ck(self.state.recv_chain_key)
         self.state.recv_msg_number += 1
 
         return self._decrypt_with_key(ciphertext, message_key)
@@ -375,7 +332,7 @@ class RatchetSession:
             raise CryptoError(
                 ErrorCode.E102_DECRYPTION_FAILED,
                 f"Message decryption failed: {e}",
-                {"error": str(e)}
+                {"error": str(e)},
             )
 
     def _skip_message_keys(self, until: int) -> None:
@@ -394,16 +351,14 @@ class RatchetSession:
         if skipped > RATCHET_MAX_SKIP:
             raise CryptoError(
                 ErrorCode.E107_RATCHET_ERROR,
-                f"Too many skipped messages: {skipped} > {RATCHET_MAX_SKIP}"
+                f"Too many skipped messages: {skipped} > {RATCHET_MAX_SKIP}",
             )
 
         if skipped > 0:
             logger.debug(f"Skipping {skipped} message keys")
 
         while self.state.recv_msg_number < until:
-            self.state.recv_chain_key, message_key = self._kdf_ck(
-                self.state.recv_chain_key
-            )
+            self.state.recv_chain_key, message_key = self._kdf_ck(self.state.recv_chain_key)
 
             skip_key = (self.state.dh_remote, self.state.recv_msg_number)
             self.state.skipped_keys[skip_key] = message_key
@@ -431,8 +386,12 @@ class RatchetSession:
             "dh_public": self.state.dh_public.hex() if self.state.dh_public else None,
             "dh_remote": self.state.dh_remote.hex() if self.state.dh_remote else None,
             "root_key": self.state.root_key.hex() if self.state.root_key else None,
-            "send_chain_key": self.state.send_chain_key.hex() if self.state.send_chain_key else None,
-            "recv_chain_key": self.state.recv_chain_key.hex() if self.state.recv_chain_key else None,
+            "send_chain_key": (
+                self.state.send_chain_key.hex() if self.state.send_chain_key else None
+            ),
+            "recv_chain_key": (
+                self.state.recv_chain_key.hex() if self.state.recv_chain_key else None
+            ),
             "send_msg_number": self.state.send_msg_number,
             "recv_msg_number": self.state.recv_msg_number,
             "prev_send_count": self.state.prev_send_count,

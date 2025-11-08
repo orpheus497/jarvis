@@ -15,11 +15,11 @@ from threading import Lock
 from typing import Dict, Set
 
 from .constants import (
-    RATE_LIMIT_MESSAGES_PER_MINUTE,
-    RATE_LIMIT_MESSAGES_BURST,
-    RATE_LIMIT_CONNECTIONS_PER_MINUTE,
     RATE_LIMIT_BAN_DURATION,
     RATE_LIMIT_CLEANUP_INTERVAL,
+    RATE_LIMIT_CONNECTIONS_PER_MINUTE,
+    RATE_LIMIT_MESSAGES_BURST,
+    RATE_LIMIT_MESSAGES_PER_MINUTE,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,10 +66,7 @@ class TokenBucket:
             # Refill tokens based on time elapsed
             now = time.time()
             elapsed = now - self.last_refill
-            self.tokens = min(
-                self.capacity,
-                self.tokens + (elapsed * self.refill_rate)
-            )
+            self.tokens = min(self.capacity, self.tokens + (elapsed * self.refill_rate))
             self.last_refill = now
 
             # Check if we have enough tokens
@@ -155,10 +152,7 @@ class RateLimiter:
         with self.lock:
             if address not in self.message_buckets:
                 refill_rate = self.messages_per_minute / 60.0  # per second
-                self.message_buckets[address] = TokenBucket(
-                    self.messages_burst,
-                    refill_rate
-                )
+                self.message_buckets[address] = TokenBucket(self.messages_burst, refill_rate)
 
             bucket = self.message_buckets[address]
 
@@ -188,8 +182,7 @@ class RateLimiter:
             if address not in self.connection_buckets:
                 refill_rate = self.connections_per_minute / 60.0  # per second
                 self.connection_buckets[address] = TokenBucket(
-                    self.connections_per_minute,
-                    refill_rate
+                    self.connections_per_minute, refill_rate
                 )
 
             bucket = self.connection_buckets[address]
@@ -241,13 +234,12 @@ class RateLimiter:
         # Check if ban has expired
         now = time.time()
         with self.lock:
-            if address in self.ban_expiry:
-                if now >= self.ban_expiry[address]:
-                    # Ban expired, remove it
-                    self.banned_addresses.discard(address)
-                    self.ban_expiry.pop(address, None)
-                    logger.info(f"Ban expired for address: {address}")
-                    return False
+            if address in self.ban_expiry and now >= self.ban_expiry[address]:
+                # Ban expired, remove it
+                self.banned_addresses.discard(address)
+                self.ban_expiry.pop(address, None)
+                logger.info(f"Ban expired for address: {address}")
+                return False
 
         return True
 
@@ -264,10 +256,7 @@ class RateLimiter:
 
         with self.lock:
             # Remove expired bans
-            expired_bans = [
-                addr for addr, expiry in self.ban_expiry.items()
-                if now >= expiry
-            ]
+            expired_bans = [addr for addr, expiry in self.ban_expiry.items() if now >= expiry]
             for addr in expired_bans:
                 self.banned_addresses.discard(addr)
                 self.ban_expiry.pop(addr, None)
@@ -279,14 +268,16 @@ class RateLimiter:
             stale_timeout = 3600  # 1 hour
 
             stale_message_buckets = [
-                addr for addr, bucket in self.message_buckets.items()
+                addr
+                for addr, bucket in self.message_buckets.items()
                 if now - bucket.last_refill > stale_timeout
             ]
             for addr in stale_message_buckets:
                 del self.message_buckets[addr]
 
             stale_connection_buckets = [
-                addr for addr, bucket in self.connection_buckets.items()
+                addr
+                for addr, bucket in self.connection_buckets.items()
                 if now - bucket.last_refill > stale_timeout
             ]
             for addr in stale_connection_buckets:

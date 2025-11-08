@@ -9,7 +9,7 @@ Version: 2.0.0
 """
 
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 class ErrorCode(Enum):
@@ -107,12 +107,7 @@ class JarvisError(Exception):
         details: Additional error details (optional)
     """
 
-    def __init__(
-        self,
-        code: ErrorCode,
-        message: str,
-        details: Optional[Dict[str, Any]] = None
-    ):
+    def __init__(self, code: ErrorCode, message: str, details: Optional[Dict[str, Any]] = None):
         """Initialize a Jarvis error.
 
         Args:
@@ -131,11 +126,7 @@ class JarvisError(Exception):
         Returns:
             Dictionary containing error information
         """
-        return {
-            "code": self.code.value,
-            "message": self.message,
-            "details": self.details
-        }
+        return {"code": self.code.value, "message": self.message, "details": self.details}
 
 
 class CryptoError(JarvisError):
@@ -149,7 +140,7 @@ class CryptoError(JarvisError):
         self,
         code: ErrorCode = ErrorCode.E100_CRYPTO_ERROR,
         message: str = "Cryptographic operation failed",
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(code, message, details)
 
@@ -165,7 +156,7 @@ class NetworkError(JarvisError):
         self,
         code: ErrorCode = ErrorCode.E200_NETWORK_ERROR,
         message: str = "Network operation failed",
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(code, message, details)
 
@@ -180,7 +171,7 @@ class IdentityError(JarvisError):
         self,
         code: ErrorCode = ErrorCode.E300_IDENTITY_ERROR,
         message: str = "Identity operation failed",
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(code, message, details)
 
@@ -195,7 +186,7 @@ class ContactError(JarvisError):
         self,
         code: ErrorCode = ErrorCode.E400_CONTACT_ERROR,
         message: str = "Contact operation failed",
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(code, message, details)
 
@@ -210,7 +201,7 @@ class GroupError(JarvisError):
         self,
         code: ErrorCode = ErrorCode.E500_GROUP_ERROR,
         message: str = "Group operation failed",
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(code, message, details)
 
@@ -225,7 +216,7 @@ class FileTransferError(JarvisError):
         self,
         code: ErrorCode = ErrorCode.E600_FILE_TRANSFER_ERROR,
         message: str = "File transfer operation failed",
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(code, message, details)
 
@@ -240,7 +231,7 @@ class ConfigError(JarvisError):
         self,
         code: ErrorCode = ErrorCode.E700_CONFIG_ERROR,
         message: str = "Configuration operation failed",
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(code, message, details)
 
@@ -255,6 +246,6 @@ class ServerError(JarvisError):
         self,
         code: ErrorCode = ErrorCode.E800_SERVER_ERROR,
         message: str = "Server operation failed",
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(code, message, details)

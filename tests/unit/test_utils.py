@@ -6,17 +6,16 @@ Created by orpheus497
 Tests utility functions for formatting, validation, and helpers.
 """
 
-import pytest
 from jarvis.utils import (
-    validate_port,
-    validate_ip,
-    validate_hostname,
-    validate_uid,
-    validate_group_uid,
-    truncate_string,
     format_fingerprint,
     get_initials,
-    sanitize_filename
+    sanitize_filename,
+    truncate_string,
+    validate_group_uid,
+    validate_hostname,
+    validate_ip,
+    validate_port,
+    validate_uid,
 )
 
 

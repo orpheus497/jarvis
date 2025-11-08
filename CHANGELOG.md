@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2025-11-08
+
 ### Fixed
 - **CRITICAL:** Silent exception handling in contact persistence (contact.py:95-96, 104-105) preventing error detection and causing potential data loss
 - **CRITICAL:** Silent exception handling in message persistence (message.py:124-125, 141-142) preventing error detection and causing potential data loss

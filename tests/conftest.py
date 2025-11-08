@@ -6,11 +6,11 @@ Created by orpheus497
 Provides common fixtures and test utilities for unit and integration tests.
 """
 
-import os
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Generator
+
 import pytest
 
 
@@ -57,15 +57,12 @@ def sample_identity_data() -> dict:
         dict: Sample identity dictionary
     """
     return {
-        'uid': 'a' * 32,
-        'username': 'test_user',
-        'created_at': '2025-01-01T00:00:00+00:00',
-        'fingerprint': 'b' * 64,
-        'listen_port': 5000,
-        'keypair': {
-            'private_key': 'c' * 64,
-            'public_key': 'd' * 64
-        }
+        "uid": "a" * 32,
+        "username": "test_user",
+        "created_at": "2025-01-01T00:00:00+00:00",
+        "fingerprint": "b" * 64,
+        "listen_port": 5000,
+        "keypair": {"private_key": "c" * 64, "public_key": "d" * 64},
     }
 
 
@@ -78,15 +75,15 @@ def sample_contact_data() -> dict:
         dict: Sample contact dictionary
     """
     return {
-        'uid': 'e' * 32,
-        'username': 'contact_user',
-        'public_key': 'f' * 64,
-        'fingerprint': 'g' * 64,
-        'ip_address': '192.168.1.100',
-        'port': 5000,
-        'added_at': '2025-01-01T00:00:00+00:00',
-        'last_seen': '2025-01-01T00:00:00+00:00',
-        'online': False
+        "uid": "e" * 32,
+        "username": "contact_user",
+        "public_key": "f" * 64,
+        "fingerprint": "g" * 64,
+        "ip_address": "192.168.1.100",
+        "port": 5000,
+        "added_at": "2025-01-01T00:00:00+00:00",
+        "last_seen": "2025-01-01T00:00:00+00:00",
+        "online": False,
     }
 
 
@@ -99,13 +96,13 @@ def sample_message_data() -> dict:
         dict: Sample message dictionary
     """
     return {
-        'message_id': 'h' * 32,
-        'contact_uid': 'e' * 32,
-        'content': 'Hello, World!',
-        'timestamp': '2025-01-01T00:00:00+00:00',
-        'sent_by_me': True,
-        'read': False,
-        'encrypted': True
+        "message_id": "h" * 32,
+        "contact_uid": "e" * 32,
+        "content": "Hello, World!",
+        "timestamp": "2025-01-01T00:00:00+00:00",
+        "sent_by_me": True,
+        "read": False,
+        "encrypted": True,
     }
 
 
@@ -118,11 +115,11 @@ def sample_group_data() -> dict:
         dict: Sample group dictionary
     """
     return {
-        'group_id': 'i' * 32,
-        'name': 'Test Group',
-        'created_at': '2025-01-01T00:00:00+00:00',
-        'created_by': 'a' * 32,
-        'members': []
+        "group_id": "i" * 32,
+        "name": "Test Group",
+        "created_at": "2025-01-01T00:00:00+00:00",
+        "created_by": "a" * 32,
+        "members": [],
     }
 
 
@@ -134,15 +131,9 @@ def pytest_configure(config):
     Args:
         config: Pytest configuration object
     """
-    config.addinivalue_line(
-        "markers", "unit: mark test as a unit test"
-    )
-    config.addinivalue_line(
-        "markers", "integration: mark test as an integration test"
-    )
-    config.addinivalue_line(
-        "markers", "slow: mark test as slow running"
-    )
+    config.addinivalue_line("markers", "unit: mark test as a unit test")
+    config.addinivalue_line("markers", "integration: mark test as an integration test")
+    config.addinivalue_line("markers", "slow: mark test as slow running")
 
 
 # Test collection hooks

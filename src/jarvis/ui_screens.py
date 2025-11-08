@@ -9,26 +9,27 @@ Author: orpheus497
 Version: 2.0.0
 """
 
-from typing import Optional, Callable, List, Dict
-from pathlib import Path
-from rich.text import Text
-from rich.table import Table
+import contextlib
+from typing import Callable, Dict, List, Optional
+
 from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.containers import Container, Horizontal, ScrollableContainer
 from textual.screen import Screen
 from textual.widgets import (
-    Header, Footer, Static, Button, Input, Label,
-    DataTable, ListView, ListItem
+    Button,
+    DataTable,
+    Footer,
+    Header,
+    Input,
+    Label,
 )
-from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
-from textual.binding import Binding
 
 from .ui_components import (
+    ConfirmationDialog,
     FileTransferProgress,
-    ConnectionQualityIndicator,
     SearchResultsList,
     StatisticsChart,
-    ErrorDialog,
-    ConfirmationDialog
 )
 
 
@@ -51,10 +52,7 @@ class FileTransferScreen(Screen):
     ]
 
     def __init__(
-        self,
-        name: Optional[str] = None,
-        id: Optional[str] = None,
-        classes: Optional[str] = None
+        self, name: Optional[str] = None, id: Optional[str] = None, classes: Optional[str] = None
     ):
         """Initialize file transfer screen.
 
@@ -93,17 +91,14 @@ class FileTransferScreen(Screen):
             total_size: Total file size in bytes
         """
         transfer_widget = FileTransferProgress(
-            transfer_id=transfer_id,
-            filename=filename,
-            total_size=total_size
+            transfer_id=transfer_id, filename=filename, total_size=total_size
         )
         self.active_transfers[transfer_id] = transfer_widget
 
         container = self.query_one("#active-transfers", Container)
         container.mount(transfer_widget)
 
-    def update_transfer(self, transfer_id: str, bytes_transferred: int,
-                       speed_bps: float) -> None:
+    def update_transfer(self, transfer_id: str, bytes_transferred: int, speed_bps: float) -> None:
         """Update transfer progress.
 
         Args:
@@ -112,9 +107,7 @@ class FileTransferScreen(Screen):
             speed_bps: Transfer speed in bytes per second
         """
         if transfer_id in self.active_transfers:
-            self.active_transfers[transfer_id].update_progress(
-                bytes_transferred, speed_bps
-            )
+            self.active_transfers[transfer_id].update_progress(bytes_transferred, speed_bps)
 
     def complete_transfer(self, transfer_id: str) -> None:
         """Mark transfer as completed and move to completed section.
@@ -127,7 +120,7 @@ class FileTransferScreen(Screen):
             widget.set_status("complete")
 
             # Move to completed section
-            active_container = self.query_one("#active-transfers", Container)
+            self.query_one("#active-transfers", Container)
             completed_container = self.query_one("#completed-transfers", Container)
 
             widget.remove()
@@ -181,7 +174,7 @@ class SearchScreen(Screen):
         search_callback: Optional[Callable] = None,
         name: Optional[str] = None,
         id: Optional[str] = None,
-        classes: Optional[str] = None
+        classes: Optional[str] = None,
     ):
         """Initialize search screen.
 
@@ -221,8 +214,7 @@ class SearchScreen(Screen):
         yield Label("", id="result-count")
         yield Footer()
 
-    def execute_search(self, query: str, contact_filter: str = "",
-                      group_filter: str = "") -> None:
+    def execute_search(self, query: str, contact_filter: str = "", group_filter: str = "") -> None:
         """Execute a search query.
 
         Args:
@@ -232,9 +224,7 @@ class SearchScreen(Screen):
         """
         if self.search_callback:
             results = self.search_callback(
-                query=query,
-                contact_uid=contact_filter or None,
-                group_id=group_filter or None
+                query=query, contact_uid=contact_filter or None, group_id=group_filter or None
             )
             self.current_results = results
 
@@ -264,7 +254,7 @@ class SearchScreen(Screen):
         self.execute_search(
             query=search_input.value,
             contact_filter=contact_input.value,
-            group_filter=group_input.value
+            group_filter=group_input.value,
         )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -301,7 +291,7 @@ class StatisticsScreen(Screen):
         stats_callback: Optional[Callable] = None,
         name: Optional[str] = None,
         id: Optional[str] = None,
-        classes: Optional[str] = None
+        classes: Optional[str] = None,
     ):
         """Initialize statistics screen.
 
@@ -329,8 +319,7 @@ class StatisticsScreen(Screen):
 
         yield Footer()
 
-    def update_statistics(self, overall_stats: Dict,
-                         contact_stats: Dict[str, Dict]) -> None:
+    def update_statistics(self, overall_stats: Dict, contact_stats: Dict[str, Dict]) -> None:
         """Update displayed statistics.
 
         Args:
@@ -346,7 +335,7 @@ class StatisticsScreen(Screen):
         contact_container = self.query_one("#contact-stats", Container)
         contact_container.remove_children()
 
-        for contact_uid, stats in contact_stats.items():
+        for _contact_uid, stats in contact_stats.items():
             chart = StatisticsChart(stats=stats)
             contact_container.mount(chart)
 
@@ -383,7 +372,7 @@ class ConfigurationScreen(Screen):
         save_callback: Optional[Callable] = None,
         name: Optional[str] = None,
         id: Optional[str] = None,
-        classes: Optional[str] = None
+        classes: Optional[str] = None,
     ):
         """Initialize configuration screen.
 
@@ -409,14 +398,12 @@ class ConfigurationScreen(Screen):
             with Horizontal():
                 yield Label("Server Host:", classes="config-label")
                 yield Input(
-                    value=self.config.get("network", {}).get("host", "0.0.0.0"),
-                    id="network-host"
+                    value=self.config.get("network", {}).get("host", "0.0.0.0"), id="network-host"
                 )
             with Horizontal():
                 yield Label("Server Port:", classes="config-label")
                 yield Input(
-                    value=str(self.config.get("network", {}).get("port", 5000)),
-                    id="network-port"
+                    value=str(self.config.get("network", {}).get("port", 5000)), id="network-port"
                 )
 
             # Security settings
@@ -425,13 +412,13 @@ class ConfigurationScreen(Screen):
                 yield Label("Use Double Ratchet:", classes="config-label")
                 yield Input(
                     value=str(self.config.get("security", {}).get("use_ratchet", True)),
-                    id="security-ratchet"
+                    id="security-ratchet",
                 )
             with Horizontal():
                 yield Label("Message Encryption:", classes="config-label")
                 yield Input(
                     value=str(self.config.get("security", {}).get("encryption_enabled", True)),
-                    id="security-encryption"
+                    id="security-encryption",
                 )
 
             # Rate limiting
@@ -440,7 +427,7 @@ class ConfigurationScreen(Screen):
                 yield Label("Messages per Minute:", classes="config-label")
                 yield Input(
                     value=str(self.config.get("rate_limit", {}).get("messages_per_minute", 60)),
-                    id="rate-limit-messages"
+                    id="rate-limit-messages",
                 )
 
             # File transfers
@@ -449,7 +436,7 @@ class ConfigurationScreen(Screen):
                 yield Label("Chunk Size (KB):", classes="config-label")
                 yield Input(
                     value=str(self.config.get("file_transfer", {}).get("chunk_size", 1024)),
-                    id="file-chunk-size"
+                    id="file-chunk-size",
                 )
 
         with Horizontal(id="config-actions"):
@@ -468,14 +455,15 @@ class ConfigurationScreen(Screen):
             },
             "security": {
                 "use_ratchet": self.query_one("#security-ratchet", Input).value.lower() == "true",
-                "encryption_enabled": self.query_one("#security-encryption", Input).value.lower() == "true",
+                "encryption_enabled": self.query_one("#security-encryption", Input).value.lower()
+                == "true",
             },
             "rate_limit": {
                 "messages_per_minute": int(self.query_one("#rate-limit-messages", Input).value),
             },
             "file_transfer": {
                 "chunk_size": int(self.query_one("#file-chunk-size", Input).value),
-            }
+            },
         }
 
         if self.save_callback:
@@ -519,7 +507,7 @@ class BackupManagementScreen(Screen):
         restore_callback: Optional[Callable] = None,
         name: Optional[str] = None,
         id: Optional[str] = None,
-        classes: Optional[str] = None
+        classes: Optional[str] = None,
     ):
         """Initialize backup management screen.
 
@@ -544,8 +532,9 @@ class BackupManagementScreen(Screen):
             yield Label("Create New Backup:", classes="section-header")
             with Horizontal():
                 yield Label("Encryption Password (optional):")
-                yield Input(placeholder="Leave empty for no encryption",
-                          password=True, id="backup-password")
+                yield Input(
+                    placeholder="Leave empty for no encryption", password=True, id="backup-password"
+                )
 
             with Horizontal(id="backup-actions"):
                 yield Button("Create Backup", variant="primary", id="create-btn")
@@ -578,7 +567,7 @@ class BackupManagementScreen(Screen):
                 backup.get("date", "Unknown"),
                 backup.get("size", "Unknown"),
                 "Yes" if backup.get("encrypted", False) else "No",
-                backup.get("path", "Unknown")
+                backup.get("path", "Unknown"),
             )
 
     def action_quit_screen(self) -> None:
@@ -592,10 +581,10 @@ class BackupManagementScreen(Screen):
 
         if self.backup_callback:
             try:
-                result = self.backup_callback(password=password)
+                self.backup_callback(password=password)
                 # Show success dialog
                 password_input.value = ""
-            except Exception as e:
+            except Exception:
                 # Show error dialog
                 pass
 
@@ -607,15 +596,13 @@ class BackupManagementScreen(Screen):
 
             # Show confirmation dialog
             def on_confirm():
-                try:
+                with contextlib.suppress(Exception):
                     self.restore_callback(backup_path=backup["path"])
-                except Exception as e:
-                    pass
 
             dialog = ConfirmationDialog(
                 title="Restore Backup",
                 message=f"Restore from backup: {backup['date']}?\nThis will replace current data.",
-                on_confirm=on_confirm
+                on_confirm=on_confirm,
             )
             self.mount(dialog)
 

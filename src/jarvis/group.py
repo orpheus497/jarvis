@@ -7,10 +7,10 @@ Manages group chats, memberships, and group-specific encryption.
 """
 
 import json
-import os
 import logging
-from typing import Dict, List, Optional, Set, Any
+import os
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Set
 
 import aiofiles
 
@@ -22,8 +22,9 @@ logger = logging.getLogger(__name__)
 class GroupMember:
     """Represents a member of a group chat."""
 
-    def __init__(self, uid: str, username: str, public_key: str,
-                 fingerprint: str, is_admin: bool = False):
+    def __init__(
+        self, uid: str, username: str, public_key: str, fingerprint: str, is_admin: bool = False
+    ):
         self.uid = uid
         self.username = username
         self.public_key = public_key
@@ -34,25 +35,25 @@ class GroupMember:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
-            'uid': self.uid,
-            'username': self.username,
-            'public_key': self.public_key,
-            'fingerprint': self.fingerprint,
-            'is_admin': self.is_admin,
-            'joined_at': self.joined_at
+            "uid": self.uid,
+            "username": self.username,
+            "public_key": self.public_key,
+            "fingerprint": self.fingerprint,
+            "is_admin": self.is_admin,
+            "joined_at": self.joined_at,
         }
 
     @staticmethod
-    def from_dict(data: Dict[str, Any]) -> 'GroupMember':
+    def from_dict(data: Dict[str, Any]) -> "GroupMember":
         """Create from dictionary."""
         member = GroupMember(
-            uid=data['uid'],
-            username=data['username'],
-            public_key=data['public_key'],
-            fingerprint=data['fingerprint'],
-            is_admin=data.get('is_admin', False)
+            uid=data["uid"],
+            username=data["username"],
+            public_key=data["public_key"],
+            fingerprint=data["fingerprint"],
+            is_admin=data.get("is_admin", False),
         )
-        member.joined_at = data.get('joined_at', member.joined_at)
+        member.joined_at = data.get("joined_at", member.joined_at)
         return member
 
 
@@ -70,28 +71,24 @@ class Group:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for storage."""
         return {
-            'group_id': self.group_id,
-            'name': self.name,
-            'creator_uid': self.creator_uid,
-            'members': {uid: member.to_dict() for uid, member in self.members.items()},
-            'created_at': self.created_at,
-            'description': self.description
+            "group_id": self.group_id,
+            "name": self.name,
+            "creator_uid": self.creator_uid,
+            "members": {uid: member.to_dict() for uid, member in self.members.items()},
+            "created_at": self.created_at,
+            "description": self.description,
         }
 
     @staticmethod
-    def from_dict(data: Dict[str, Any]) -> 'Group':
+    def from_dict(data: Dict[str, Any]) -> "Group":
         """Create from dictionary."""
-        group = Group(
-            group_id=data['group_id'],
-            name=data['name'],
-            creator_uid=data['creator_uid']
-        )
+        group = Group(group_id=data["group_id"], name=data["name"], creator_uid=data["creator_uid"])
         group.members = {
             uid: GroupMember.from_dict(member_data)
-            for uid, member_data in data.get('members', {}).items()
+            for uid, member_data in data.get("members", {}).items()
         }
-        group.created_at = data.get('created_at', group.created_at)
-        group.description = data.get('description', '')
+        group.created_at = data.get("created_at", group.created_at)
+        group.description = data.get("description", "")
         return group
 
     def add_member(self, member: GroupMember) -> None:
@@ -147,14 +144,14 @@ class GroupManager:
         """Load groups from file."""
         if os.path.exists(self.groups_file):
             try:
-                with open(self.groups_file, 'r', encoding='utf-8') as f:
+                with open(self.groups_file, encoding="utf-8") as f:
                     data = json.load(f)
                 for group_id, group_data in data.items():
                     self.groups[group_id] = Group.from_dict(group_data)
                 logger.info(f"Loaded {len(self.groups)} groups from {self.groups_file}")
-            except (IOError, OSError) as e:
+            except OSError as e:
                 logger.error(f"Failed to read groups file: {e}")
-                raise IOError(f"Cannot load groups: {e}") from e
+                raise OSError(f"Cannot load groups: {e}") from e
             except json.JSONDecodeError as e:
                 logger.error(f"Corrupted groups file: {e}")
                 # Don't raise - start with empty groups if file is corrupted
@@ -171,16 +168,16 @@ class GroupManager:
 
             # Write to temporary file first
             temp_file = f"{self.groups_file}.tmp"
-            async with aiofiles.open(temp_file, 'w', encoding='utf-8') as f:
+            async with aiofiles.open(temp_file, "w", encoding="utf-8") as f:
                 await f.write(json_data)
 
             # Atomic rename
             os.replace(temp_file, self.groups_file)
             logger.debug(f"Saved {len(self.groups)} groups to {self.groups_file}")
 
-        except (IOError, OSError) as e:
+        except OSError as e:
             logger.error(f"Failed to save groups: {e}")
-            raise IOError(f"Cannot save groups: {e}") from e
+            raise OSError(f"Cannot save groups: {e}") from e
         except Exception as e:
             logger.error(f"Unexpected error saving groups: {e}")
             raise
@@ -193,22 +190,28 @@ class GroupManager:
 
             # Write to temporary file first for atomicity
             temp_file = f"{self.groups_file}.tmp"
-            with open(temp_file, 'w', encoding='utf-8') as f:
+            with open(temp_file, "w", encoding="utf-8") as f:
                 f.write(json_data)
 
             # Atomic rename
             os.replace(temp_file, self.groups_file)
             logger.debug(f"Saved {len(self.groups)} groups to {self.groups_file}")
 
-        except (IOError, OSError) as e:
+        except OSError as e:
             logger.error(f"Failed to save groups: {e}")
-            raise IOError(f"Cannot save groups: {e}") from e
+            raise OSError(f"Cannot save groups: {e}") from e
         except Exception as e:
             logger.error(f"Unexpected error saving groups: {e}")
             raise
 
-    def create_group(self, name: str, creator_uid: str, creator_username: str,
-                    creator_public_key: str, creator_fingerprint: str) -> Group:
+    def create_group(
+        self,
+        name: str,
+        creator_uid: str,
+        creator_username: str,
+        creator_public_key: str,
+        creator_fingerprint: str,
+    ) -> Group:
         """
         Create a group with a unique group ID.
         Creator is automatically added as admin.
@@ -225,7 +228,7 @@ class GroupManager:
             username=creator_username,
             public_key=creator_public_key,
             fingerprint=creator_fingerprint,
-            is_admin=True
+            is_admin=True,
         )
         group.add_member(creator_member)
 
@@ -313,7 +316,7 @@ class GroupManager:
                 os.remove(self.groups_file)
                 logger.info("Deleted all groups and groups file")
                 return True
-            except (IOError, OSError) as e:
+            except OSError as e:
                 logger.error(f"Failed to delete groups file: {e}")
                 return False
         return True

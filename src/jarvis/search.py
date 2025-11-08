@@ -12,12 +12,11 @@ Version: 2.0.0
 import json
 import logging
 import sqlite3
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
-from .constants import SEARCH_RESULTS_PER_PAGE, SEARCH_MAX_RESULTS, SEARCH_CONTEXT_LINES
-from .errors import JarvisError, ErrorCode
+from .constants import SEARCH_CONTEXT_LINES, SEARCH_MAX_RESULTS, SEARCH_RESULTS_PER_PAGE
+from .errors import ErrorCode, JarvisError
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,7 @@ class MessageSearchEngine:
             raise JarvisError(
                 ErrorCode.E001_UNKNOWN_ERROR,
                 f"Failed to initialize search engine: {e}",
-                {"error": str(e)}
+                {"error": str(e)},
             )
 
     def _create_tables(self) -> None:
@@ -71,7 +70,8 @@ class MessageSearchEngine:
         cursor = self.conn.cursor()
 
         # Create messages table
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 message_id TEXT UNIQUE NOT NULL,
@@ -83,10 +83,12 @@ class MessageSearchEngine:
                 message_type TEXT NOT NULL,
                 is_encrypted BOOLEAN DEFAULT 1
             )
-        """)
+        """
+        )
 
         # Create FTS5 virtual table for full-text search
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
                 content,
                 sender,
@@ -94,23 +96,29 @@ class MessageSearchEngine:
                 content='messages',
                 content_rowid='id'
             )
-        """)
+        """
+        )
 
         # Create triggers to keep FTS5 in sync
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
                 INSERT INTO messages_fts(rowid, content, sender, recipient)
                 VALUES (new.id, new.content, new.sender, new.recipient);
             END
-        """)
+        """
+        )
 
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
                 DELETE FROM messages_fts WHERE rowid = old.id;
             END
-        """)
+        """
+        )
 
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
                 UPDATE messages_fts SET
                     content = new.content,
@@ -118,28 +126,37 @@ class MessageSearchEngine:
                     recipient = new.recipient
                 WHERE rowid = new.id;
             END
-        """)
+        """
+        )
 
         # Create indices for better query performance
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_messages_timestamp
             ON messages(timestamp DESC)
-        """)
+        """
+        )
 
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_messages_sender
             ON messages(sender)
-        """)
+        """
+        )
 
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_messages_recipient
             ON messages(recipient)
-        """)
+        """
+        )
 
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_messages_group
             ON messages(group_id)
-        """)
+        """
+        )
 
         self.conn.commit()
         logger.debug("Database tables and indices created")
@@ -161,48 +178,54 @@ class MessageSearchEngine:
             return 0
 
         try:
-            with open(json_file, 'r') as f:
+            with open(json_file) as f:
                 data = json.load(f)
 
             count = 0
             cursor = self.conn.cursor()
 
             # Migrate direct messages
-            for contact, messages in data.get('messages', {}).items():
+            for contact, messages in data.get("messages", {}).items():
                 for msg in messages:
                     try:
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT OR IGNORE INTO messages
                             (message_id, sender, recipient, content, timestamp, message_type)
                             VALUES (?, ?, ?, ?, ?, ?)
-                        """, (
-                            msg.get('id', f"{msg['timestamp']}_{contact}"),
-                            msg.get('sender', 'unknown'),
-                            contact,
-                            msg.get('content', ''),
-                            msg.get('timestamp', 0),
-                            msg.get('type', 'text')
-                        ))
+                        """,
+                            (
+                                msg.get("id", f"{msg['timestamp']}_{contact}"),
+                                msg.get("sender", "unknown"),
+                                contact,
+                                msg.get("content", ""),
+                                msg.get("timestamp", 0),
+                                msg.get("type", "text"),
+                            ),
+                        )
                         count += 1
                     except Exception as e:
                         logger.warning(f"Failed to migrate message: {e}")
 
             # Migrate group messages
-            for group_id, messages in data.get('group_messages', {}).items():
+            for group_id, messages in data.get("group_messages", {}).items():
                 for msg in messages:
                     try:
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT OR IGNORE INTO messages
                             (message_id, sender, group_id, content, timestamp, message_type)
                             VALUES (?, ?, ?, ?, ?, ?)
-                        """, (
-                            msg.get('id', f"{msg['timestamp']}_{group_id}"),
-                            msg.get('sender', 'unknown'),
-                            group_id,
-                            msg.get('content', ''),
-                            msg.get('timestamp', 0),
-                            msg.get('type', 'text')
-                        ))
+                        """,
+                            (
+                                msg.get("id", f"{msg['timestamp']}_{group_id}"),
+                                msg.get("sender", "unknown"),
+                                group_id,
+                                msg.get("content", ""),
+                                msg.get("timestamp", 0),
+                                msg.get("type", "text"),
+                            ),
+                        )
                         count += 1
                     except Exception as e:
                         logger.warning(f"Failed to migrate group message: {e}")
@@ -214,9 +237,7 @@ class MessageSearchEngine:
 
         except Exception as e:
             raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                f"Failed to migrate from JSON: {e}",
-                {"error": str(e)}
+                ErrorCode.E001_UNKNOWN_ERROR, f"Failed to migrate from JSON: {e}", {"error": str(e)}
             )
 
     def index_message(
@@ -227,7 +248,7 @@ class MessageSearchEngine:
         timestamp: int,
         recipient: Optional[str] = None,
         group_id: Optional[str] = None,
-        message_type: str = "text"
+        message_type: str = "text",
     ) -> None:
         """Index a single message for searching.
 
@@ -245,11 +266,14 @@ class MessageSearchEngine:
         """
         try:
             cursor = self.conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT OR REPLACE INTO messages
                 (message_id, sender, recipient, group_id, content, timestamp, message_type)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (message_id, sender, recipient, group_id, content, timestamp, message_type))
+            """,
+                (message_id, sender, recipient, group_id, content, timestamp, message_type),
+            )
 
             self.conn.commit()
             logger.debug(f"Indexed message: {message_id}")
@@ -258,7 +282,7 @@ class MessageSearchEngine:
             raise JarvisError(
                 ErrorCode.E001_UNKNOWN_ERROR,
                 f"Failed to index message: {e}",
-                {"message_id": message_id, "error": str(e)}
+                {"message_id": message_id, "error": str(e)},
             )
 
     def search(
@@ -269,7 +293,7 @@ class MessageSearchEngine:
         start_date: Optional[int] = None,
         end_date: Optional[int] = None,
         limit: int = SEARCH_RESULTS_PER_PAGE,
-        offset: int = 0
+        offset: int = 0,
     ) -> List[Dict]:
         """Search messages with filters.
 
@@ -337,16 +361,18 @@ class MessageSearchEngine:
 
             results = []
             for row in cursor.fetchall():
-                results.append({
-                    'message_id': row['message_id'],
-                    'sender': row['sender'],
-                    'recipient': row['recipient'],
-                    'group_id': row['group_id'],
-                    'content': row['content'],
-                    'timestamp': row['timestamp'],
-                    'message_type': row['message_type'],
-                    'snippet': row['snippet'],
-                })
+                results.append(
+                    {
+                        "message_id": row["message_id"],
+                        "sender": row["sender"],
+                        "recipient": row["recipient"],
+                        "group_id": row["group_id"],
+                        "content": row["content"],
+                        "timestamp": row["timestamp"],
+                        "message_type": row["message_type"],
+                        "snippet": row["snippet"],
+                    }
+                )
 
             logger.info(f"Search query '{query}' returned {len(results)} results")
             return results
@@ -355,7 +381,7 @@ class MessageSearchEngine:
             raise JarvisError(
                 ErrorCode.E001_UNKNOWN_ERROR,
                 f"Search failed: {e}",
-                {"query": query, "error": str(e)}
+                {"query": query, "error": str(e)},
             )
 
     def search_by_contact(self, contact: str, limit: int = 100) -> List[Dict]:
@@ -370,7 +396,8 @@ class MessageSearchEngine:
         """
         try:
             cursor = self.conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     message_id, sender, recipient, group_id,
                     content, timestamp, message_type
@@ -378,7 +405,9 @@ class MessageSearchEngine:
                 WHERE sender = ? OR recipient = ?
                 ORDER BY timestamp DESC
                 LIMIT ?
-            """, (contact, contact, limit))
+            """,
+                (contact, contact, limit),
+            )
 
             results = []
             for row in cursor.fetchall():
@@ -390,15 +419,10 @@ class MessageSearchEngine:
             raise JarvisError(
                 ErrorCode.E001_UNKNOWN_ERROR,
                 f"Contact search failed: {e}",
-                {"contact": contact, "error": str(e)}
+                {"contact": contact, "error": str(e)},
             )
 
-    def search_by_date_range(
-        self,
-        start_date: int,
-        end_date: int,
-        limit: int = 100
-    ) -> List[Dict]:
+    def search_by_date_range(self, start_date: int, end_date: int, limit: int = 100) -> List[Dict]:
         """Search messages within a date range.
 
         Args:
@@ -411,7 +435,8 @@ class MessageSearchEngine:
         """
         try:
             cursor = self.conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     message_id, sender, recipient, group_id,
                     content, timestamp, message_type
@@ -419,7 +444,9 @@ class MessageSearchEngine:
                 WHERE timestamp BETWEEN ? AND ?
                 ORDER BY timestamp DESC
                 LIMIT ?
-            """, (start_date, end_date, limit))
+            """,
+                (start_date, end_date, limit),
+            )
 
             results = []
             for row in cursor.fetchall():
@@ -429,15 +456,11 @@ class MessageSearchEngine:
 
         except Exception as e:
             raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                f"Date range search failed: {e}",
-                {"error": str(e)}
+                ErrorCode.E001_UNKNOWN_ERROR, f"Date range search failed: {e}", {"error": str(e)}
             )
 
     def get_message_context(
-        self,
-        message_id: str,
-        context_lines: int = SEARCH_CONTEXT_LINES
+        self, message_id: str, context_lines: int = SEARCH_CONTEXT_LINES
     ) -> Dict:
         """Get messages before and after a specific message.
 
@@ -452,18 +475,21 @@ class MessageSearchEngine:
             cursor = self.conn.cursor()
 
             # Get target message
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT * FROM messages WHERE message_id = ?
-            """, (message_id,))
+            """,
+                (message_id,),
+            )
             target = cursor.fetchone()
 
             if not target:
                 return {"before": [], "target": None, "after": []}
 
             target_dict = dict(target)
-            timestamp = target['timestamp']
-            recipient = target['recipient']
-            group_id = target['group_id']
+            timestamp = target["timestamp"]
+            recipient = target["recipient"]
+            group_id = target["group_id"]
 
             # Build context query
             if group_id:
@@ -475,52 +501,60 @@ class MessageSearchEngine:
 
             # Get messages before
             if group_id:
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT * FROM messages
                     WHERE {context_filter} AND timestamp < ?
                     ORDER BY timestamp DESC
                     LIMIT ?
-                """, (filter_param, timestamp, context_lines))
+                """,
+                    (filter_param, timestamp, context_lines),
+                )
             else:
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT * FROM messages
                     WHERE {context_filter} AND timestamp < ?
                     ORDER BY timestamp DESC
                     LIMIT ?
-                """, (filter_param, filter_param, timestamp, context_lines))
+                """,
+                    (filter_param, filter_param, timestamp, context_lines),
+                )
 
             before = [dict(row) for row in cursor.fetchall()]
             before.reverse()  # Chronological order
 
             # Get messages after
             if group_id:
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT * FROM messages
                     WHERE {context_filter} AND timestamp > ?
                     ORDER BY timestamp ASC
                     LIMIT ?
-                """, (filter_param, timestamp, context_lines))
+                """,
+                    (filter_param, timestamp, context_lines),
+                )
             else:
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT * FROM messages
                     WHERE {context_filter} AND timestamp > ?
                     ORDER BY timestamp ASC
                     LIMIT ?
-                """, (filter_param, filter_param, timestamp, context_lines))
+                """,
+                    (filter_param, filter_param, timestamp, context_lines),
+                )
 
             after = [dict(row) for row in cursor.fetchall()]
 
-            return {
-                "before": before,
-                "target": target_dict,
-                "after": after
-            }
+            return {"before": before, "target": target_dict, "after": after}
 
         except Exception as e:
             raise JarvisError(
                 ErrorCode.E001_UNKNOWN_ERROR,
                 f"Failed to get message context: {e}",
-                {"message_id": message_id, "error": str(e)}
+                {"message_id": message_id, "error": str(e)},
             )
 
     def get_stats(self) -> Dict:
@@ -534,15 +568,17 @@ class MessageSearchEngine:
 
             # Total messages
             cursor.execute("SELECT COUNT(*) as count FROM messages")
-            total_messages = cursor.fetchone()['count']
+            total_messages = cursor.fetchone()["count"]
 
             # Messages by type
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT message_type, COUNT(*) as count
                 FROM messages
                 GROUP BY message_type
-            """)
-            by_type = {row['message_type']: row['count'] for row in cursor.fetchall()}
+            """
+            )
+            by_type = {row["message_type"]: row["count"] for row in cursor.fetchall()}
 
             # Database size
             db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
