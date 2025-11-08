@@ -18,10 +18,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Implemented automatic session expiration (7-day absolute timeout, 24-hour idle timeout)
   - Sessions validated on load with expiration and integrity checks
   - Replaced insecure plaintext JSON storage with encrypted binary format
+- **HIGH:** Fixed DoS vulnerability in Double Ratchet skip key management (ratchet.py)
+  - Implemented aggressive batch cleanup removing 20% of old keys when limit exceeded (not just one)
+  - Added timestamp-based expiration for skipped message keys (1-hour lifetime)
+  - Enhanced DoS protection against memory exhaustion attacks via message gap manipulation
+  - Improved logging for skip key operations and cleanup events
 
 ### Fixed
 - Fixed file transfer encryption to use secrets module for cryptographically secure nonce generation
 - Fixed silent exception swallowing in session management preventing error detection
+- Fixed broad exception handling in crypto module (crypto.py)
+  - Replaced generic Exception catches with specific exception types (KeyError, ValueError, UnicodeDecodeError)
+  - Added proper exception chaining using 'from e' syntax for better debugging
+  - Distinguishes between authentication failures and other cryptographic errors
+- Fixed bare except clauses in utils module (utils.py)
+  - Replaced bare except with specific exceptions (ValueError, TypeError, AttributeError)
+  - Added logging for timestamp parsing failures
+  - Improved error handling in format_timestamp and format_timestamp_relative functions
+- Fixed exception handling in Double Ratchet decryption (ratchet.py)
+  - Added input validation for ciphertext length
+  - Separated authentication failures from other decryption errors
+  - Improved error messages with context
 - Added proper error handling and logging to file transfer operations
 - Added OSError-specific exception handling for file I/O operations in file transfer
 - Session manager now uses atomic file writes (temp file + rename) to prevent corruption
@@ -32,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Session tokens now generated using secrets.token_urlsafe() for improved security
 - Enhanced exception handling in file transfer with proper error propagation using 'from e' syntax
 - Improved logging throughout file transfer and session management modules
+- Double Ratchet skip key storage now includes timestamps for expiration tracking
+- Ratchet skip key cleanup now removes batches of old keys instead of single keys
 
 ### Added
 - Atomic file writes in session manager to prevent data corruption during crashes
@@ -40,6 +59,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HMAC-based integrity verification for encrypted session files
 - Cleanup method for removing expired sessions
 - Enhanced file transfer error messages with context and troubleshooting information
+- Time-based expiration for Double Ratchet skipped message keys
+- Aggressive batch cleanup for skip keys to prevent DoS attacks
+- Cleanup methods for expired and oldest skip keys in ratchet
+- Enhanced logging throughout ratchet, crypto, and utils modules
+
+### Performance
+- Reduced memory usage in Double Ratchet by removing expired skip keys automatically
+- Improved skip key cleanup efficiency with batch operations
 
 ## [2.4.0] - 2025-11-08
 

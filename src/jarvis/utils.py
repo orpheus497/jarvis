@@ -2,13 +2,21 @@
 Jarvis - Utility functions.
 
 Created by orpheus497
+Version: 2.4.0
 
 Provides various utility functions for formatting, validation, and helpers.
+
+Security improvements:
+- Specific exception handling instead of bare except clauses
+- Better error handling for timestamp parsing
 """
 
 import ipaddress
+import logging
 import re
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 
 def format_timestamp(iso_timestamp: str, format_str: str = "%Y-%m-%d %H:%M:%S") -> str:
@@ -20,12 +28,14 @@ def format_timestamp(iso_timestamp: str, format_str: str = "%Y-%m-%d %H:%M:%S") 
         format_str: strftime format string
 
     Returns:
-        Formatted timestamp string
+        Formatted timestamp string, or original if parsing fails
     """
     try:
         dt = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
         return dt.strftime(format_str)
-    except:
+    except (ValueError, TypeError, AttributeError) as e:
+        # Invalid timestamp format, type, or attribute error
+        logger.debug(f"Failed to parse timestamp '{iso_timestamp}': {e}")
         return iso_timestamp
 
 
@@ -37,7 +47,7 @@ def format_timestamp_relative(iso_timestamp: str) -> str:
         iso_timestamp: ISO 8601 timestamp string
 
     Returns:
-        Relative time string
+        Relative time string, or original if parsing fails
     """
     try:
         dt = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
@@ -59,7 +69,9 @@ def format_timestamp_relative(iso_timestamp: str) -> str:
             return f'{days} day{"s" if days != 1 else ""} ago'
         else:
             return format_timestamp(iso_timestamp, "%Y-%m-%d")
-    except:
+    except (ValueError, TypeError, AttributeError) as e:
+        # Invalid timestamp format, type, or attribute error
+        logger.debug(f"Failed to parse relative timestamp '{iso_timestamp}': {e}")
         return iso_timestamp
 
 
