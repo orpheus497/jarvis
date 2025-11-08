@@ -790,6 +790,197 @@ class P2PServer:
                 pass
 
 
+class ConnectionPoolEntry:
+    """Entry in connection pool tracking connection metadata."""
+
+    def __init__(self, connection: P2PConnection):
+        self.connection = connection
+        self.created_at = asyncio.get_event_loop().time()
+        self.last_used = asyncio.get_event_loop().time()
+        self.reuse_count = 0
+        self.is_healthy = True
+
+
+class ConnectionPool:
+    """
+    Manages connection pooling for P2P connections.
+
+    Implements connection reuse, health checking, idle timeout, and
+    automatic connection recycling for network efficiency.
+    """
+
+    def __init__(
+        self,
+        max_size: int = 50,
+        min_size: int = 5,
+        idle_timeout: int = 300,
+        health_check_interval: int = 60,
+        reuse_threshold: int = 100,
+    ):
+        """
+        Initialize connection pool.
+
+        Args:
+            max_size: Maximum number of connections to maintain
+            min_size: Minimum number of connections to keep alive
+            idle_timeout: Seconds before recycling idle connection
+            health_check_interval: Seconds between health checks
+            reuse_threshold: Maximum reuses before forced refresh
+        """
+        from .constants import (
+            CONNECTION_HEALTH_CHECK_INTERVAL,
+            CONNECTION_IDLE_TIMEOUT,
+            CONNECTION_POOL_MAX_SIZE,
+            CONNECTION_POOL_MIN_SIZE,
+            CONNECTION_REUSE_THRESHOLD,
+        )
+
+        self.max_size = max_size or CONNECTION_POOL_MAX_SIZE
+        self.min_size = min_size or CONNECTION_POOL_MIN_SIZE
+        self.idle_timeout = idle_timeout or CONNECTION_IDLE_TIMEOUT
+        self.health_check_interval = health_check_interval or CONNECTION_HEALTH_CHECK_INTERVAL
+        self.reuse_threshold = reuse_threshold or CONNECTION_REUSE_THRESHOLD
+
+        self.pool: Dict[str, ConnectionPoolEntry] = {}
+        self.pool_lock = asyncio.Lock()
+        self.health_check_task: Optional[asyncio.Task] = None
+
+        logger.info(
+            f"Connection pool initialized: max={self.max_size}, min={self.min_size}, "
+            f"idle_timeout={self.idle_timeout}s"
+        )
+
+    async def add_connection(self, uid: str, connection: P2PConnection) -> None:
+        """Add connection to pool."""
+        async with self.pool_lock:
+            if uid in self.pool:
+                old_entry = self.pool[uid]
+                await old_entry.connection.disconnect()
+
+            entry = ConnectionPoolEntry(connection)
+            self.pool[uid] = entry
+            logger.debug(f"Connection added to pool: {uid[:8]} (pool size: {len(self.pool)})")
+
+    async def get_connection(self, uid: str) -> Optional[P2PConnection]:
+        """
+        Get connection from pool, checking health and idle status.
+
+        Returns:
+            Connection if available and healthy, None otherwise
+        """
+        async with self.pool_lock:
+            entry = self.pool.get(uid)
+            if not entry:
+                return None
+
+            now = asyncio.get_event_loop().time()
+
+            if not entry.is_healthy:
+                logger.debug(f"Connection {uid[:8]} marked unhealthy, removing from pool")
+                await entry.connection.disconnect()
+                del self.pool[uid]
+                return None
+
+            if now - entry.last_used > self.idle_timeout:
+                logger.info(
+                    f"Connection {uid[:8]} idle for {now - entry.last_used:.0f}s, recycling"
+                )
+                await entry.connection.disconnect()
+                del self.pool[uid]
+                return None
+
+            if entry.reuse_count >= self.reuse_threshold:
+                logger.info(
+                    f"Connection {uid[:8]} reached reuse threshold ({entry.reuse_count}), recycling"
+                )
+                await entry.connection.disconnect()
+                del self.pool[uid]
+                return None
+
+            entry.last_used = now
+            entry.reuse_count += 1
+            return entry.connection
+
+    async def remove_connection(self, uid: str) -> None:
+        """Remove connection from pool."""
+        async with self.pool_lock:
+            entry = self.pool.pop(uid, None)
+            if entry:
+                await entry.connection.disconnect()
+                logger.debug(f"Connection removed from pool: {uid[:8]} (pool size: {len(self.pool)})")
+
+    async def start_health_checks(self) -> None:
+        """Start background health check task."""
+        if not self.health_check_task or self.health_check_task.done():
+            self.health_check_task = asyncio.create_task(self._health_check_loop())
+            logger.info("Connection pool health checks started")
+
+    async def stop_health_checks(self) -> None:
+        """Stop background health check task."""
+        if self.health_check_task and not self.health_check_task.done():
+            self.health_check_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self.health_check_task
+            logger.info("Connection pool health checks stopped")
+
+    async def _health_check_loop(self) -> None:
+        """Background task for checking connection health."""
+        while True:
+            try:
+                await asyncio.sleep(self.health_check_interval)
+
+                async with self.pool_lock:
+                    now = asyncio.get_event_loop().time()
+                    unhealthy_uids = []
+
+                    for uid, entry in self.pool.items():
+                        if entry.connection.state != ConnectionState.AUTHENTICATED:
+                            entry.is_healthy = False
+                            unhealthy_uids.append(uid)
+                        elif now - entry.last_used > self.idle_timeout:
+                            unhealthy_uids.append(uid)
+
+                    for uid in unhealthy_uids:
+                        entry = self.pool.pop(uid, None)
+                        if entry:
+                            await entry.connection.disconnect()
+                            logger.info(f"Health check: Removed unhealthy connection {uid[:8]}")
+
+                logger.debug(f"Health check complete: {len(self.pool)} connections healthy")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in health check loop: {e}")
+
+    async def get_statistics(self) -> Dict[str, Any]:
+        """Get pool statistics."""
+        async with self.pool_lock:
+            now = asyncio.get_event_loop().time()
+            return {
+                "total_connections": len(self.pool),
+                "healthy_connections": sum(1 for e in self.pool.values() if e.is_healthy),
+                "idle_connections": sum(
+                    1 for e in self.pool.values() if now - e.last_used > 60
+                ),
+                "average_reuse_count": (
+                    sum(e.reuse_count for e in self.pool.values()) / len(self.pool)
+                    if self.pool
+                    else 0
+                ),
+                "max_size": self.max_size,
+                "min_size": self.min_size,
+            }
+
+    async def clear(self) -> None:
+        """Clear all connections from pool."""
+        async with self.pool_lock:
+            for entry in self.pool.values():
+                await entry.connection.disconnect()
+            self.pool.clear()
+            logger.info("Connection pool cleared")
+
+
 class NetworkManager:
     """Manages all P2P connections and group chat routing with automatic reconnection using asyncio."""
 
@@ -814,6 +1005,7 @@ class NetworkManager:
         self.data_dir = Path(data_dir) if data_dir else Path.home() / ".jarvis"
 
         self.connections: Dict[str, P2PConnection] = {}  # uid -> connection
+        self.connection_pool = ConnectionPool()  # Connection pooling
         self.server = P2PServer(listen_port, identity, my_uid, my_username)
 
         # Group membership tracking
@@ -904,6 +1096,10 @@ class NetworkManager:
                 # Start background connection manager
                 self.running = True
                 self.connection_manager_task = asyncio.create_task(self._connection_manager_loop())
+
+                # Start connection pool health checks
+                await self.connection_pool.start_health_checks()
+
                 logger.info("Network manager started successfully")
 
             return success
@@ -916,6 +1112,9 @@ class NetworkManager:
         """Stop listening for connections and background tasks."""
         logger.info("Stopping network manager...")
         self.running = False
+
+        # Stop connection pool health checks
+        await self.connection_pool.stop_health_checks()
 
         # Stop discovery service
         if self.discovery:
@@ -940,6 +1139,9 @@ class NetworkManager:
                 logger.info("Message queue cleaned up")
             except Exception as e:
                 logger.warning(f"Error cleaning up message queue: {e}")
+
+        # Clear connection pool
+        await self.connection_pool.clear()
 
         # Stop P2P server
         await self.server.stop()

@@ -3,47 +3,206 @@ Jarvis - Message Search Engine
 
 This module provides full-text search capabilities for messages using
 SQLite FTS5 (Full-Text Search). Supports advanced search queries,
-filtering, highlighting, and context retrieval.
+filtering, highlighting, and context retrieval with LRU caching.
 
 Author: orpheus497
 Version: 2.0.0
 """
 
+import hashlib
 import json
 import logging
 import sqlite3
+import time
+from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from .constants import SEARCH_CONTEXT_LINES, SEARCH_MAX_RESULTS, SEARCH_RESULTS_PER_PAGE
+from .constants import (
+    SEARCH_CACHE_CLEANUP_INTERVAL,
+    SEARCH_CACHE_MAX_SIZE,
+    SEARCH_CACHE_TTL,
+    SEARCH_CONTEXT_LINES,
+    SEARCH_MAX_RESULTS,
+    SEARCH_RESULTS_PER_PAGE,
+)
 from .errors import ErrorCode, JarvisError
 
 logger = logging.getLogger(__name__)
 
 
+class SearchResultCache:
+    """
+    LRU cache for search results with TTL expiration.
+
+    Implements least-recently-used eviction and time-to-live
+    expiration for efficient search result caching.
+    """
+
+    def __init__(
+        self, max_size: int = SEARCH_CACHE_MAX_SIZE, ttl: int = SEARCH_CACHE_TTL
+    ):
+        """
+        Initialize search cache.
+
+        Args:
+            max_size: Maximum number of cached queries
+            ttl: Cache entry time-to-live in seconds
+        """
+        self.max_size = max_size
+        self.ttl = ttl
+        self.cache: OrderedDict[str, Tuple[List[Dict], float]] = OrderedDict()
+        self.hits = 0
+        self.misses = 0
+        logger.info(f"Search cache initialized: max_size={max_size}, ttl={ttl}s")
+
+    def _make_key(
+        self,
+        query: str,
+        contact: Optional[str] = None,
+        group_id: Optional[str] = None,
+        start_date: Optional[int] = None,
+        end_date: Optional[int] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> str:
+        """Generate cache key from query parameters."""
+        key_data = f"{query}|{contact}|{group_id}|{start_date}|{end_date}|{limit}|{offset}"
+        return hashlib.sha256(key_data.encode()).hexdigest()
+
+    def get(
+        self,
+        query: str,
+        contact: Optional[str] = None,
+        group_id: Optional[str] = None,
+        start_date: Optional[int] = None,
+        end_date: Optional[int] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Optional[List[Dict]]:
+        """
+        Get cached search results.
+
+        Returns:
+            Cached results if found and not expired, None otherwise
+        """
+        key = self._make_key(query, contact, group_id, start_date, end_date, limit, offset)
+
+        if key not in self.cache:
+            self.misses += 1
+            return None
+
+        results, timestamp = self.cache[key]
+
+        if time.time() - timestamp > self.ttl:
+            del self.cache[key]
+            self.misses += 1
+            logger.debug(f"Cache expired: {query[:30]}...")
+            return None
+
+        self.cache.move_to_end(key)
+        self.hits += 1
+        logger.debug(f"Cache hit: {query[:30]}...")
+        return results
+
+    def put(
+        self,
+        query: str,
+        results: List[Dict],
+        contact: Optional[str] = None,
+        group_id: Optional[str] = None,
+        start_date: Optional[int] = None,
+        end_date: Optional[int] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> None:
+        """Cache search results."""
+        key = self._make_key(query, contact, group_id, start_date, end_date, limit, offset)
+
+        if key in self.cache:
+            self.cache.move_to_end(key)
+
+        self.cache[key] = (results, time.time())
+
+        if len(self.cache) > self.max_size:
+            oldest_key = next(iter(self.cache))
+            del self.cache[oldest_key]
+            logger.debug(f"Cache evicted oldest entry (size={len(self.cache)})")
+
+        logger.debug(f"Cache stored: {query[:30]}... (size={len(self.cache)})")
+
+    def clear(self) -> None:
+        """Clear all cached results."""
+        self.cache.clear()
+        self.hits = 0
+        self.misses = 0
+        logger.info("Search cache cleared")
+
+    def cleanup_expired(self) -> int:
+        """
+        Remove expired cache entries.
+
+        Returns:
+            Number of entries removed
+        """
+        now = time.time()
+        expired_keys = [
+            key for key, (_, timestamp) in self.cache.items() if now - timestamp > self.ttl
+        ]
+
+        for key in expired_keys:
+            del self.cache[key]
+
+        if expired_keys:
+            logger.info(f"Cleaned up {len(expired_keys)} expired cache entries")
+
+        return len(expired_keys)
+
+    def get_statistics(self) -> Dict[str, any]:
+        """
+        Get cache statistics.
+
+        Returns:
+            Dictionary with cache stats
+        """
+        total_requests = self.hits + self.misses
+        hit_rate = self.hits / total_requests if total_requests > 0 else 0.0
+
+        return {
+            "size": len(self.cache),
+            "max_size": self.max_size,
+            "hits": self.hits,
+            "misses": self.misses,
+            "hit_rate": hit_rate,
+            "ttl": self.ttl,
+        }
+
+
 class MessageSearchEngine:
-    """Full-text search engine for messages.
+    """Full-text search engine for messages with caching.
 
     Uses SQLite FTS5 for efficient full-text search with support for
-    filters, highlighting, and pagination. Can migrate from JSON-based
-    message storage.
+    filters, highlighting, pagination, and LRU caching of results.
 
     Attributes:
         db_path: Path to SQLite database
         conn: SQLite connection
+        cache: Search result cache
     """
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, enable_cache: bool = True):
         """Initialize search engine.
 
         Args:
             db_path: Path to SQLite database file
+            enable_cache: Enable search result caching (default: True)
 
         Raises:
             JarvisError: If database initialization fails
         """
         self.db_path = Path(db_path)
         self.conn: Optional[sqlite3.Connection] = None
+        self.cache: Optional[SearchResultCache] = None
 
         try:
             # Ensure database directory exists
@@ -56,7 +215,11 @@ class MessageSearchEngine:
             # Create tables if needed
             self._create_tables()
 
-            logger.info(f"Search engine initialized: {db_path}")
+            # Initialize cache if enabled
+            if enable_cache:
+                self.cache = SearchResultCache()
+
+            logger.info(f"Search engine initialized: {db_path} (cache={enable_cache})")
 
         except Exception as e:
             raise JarvisError(
@@ -295,7 +458,7 @@ class MessageSearchEngine:
         limit: int = SEARCH_RESULTS_PER_PAGE,
         offset: int = 0,
     ) -> List[Dict]:
-        """Search messages with filters.
+        """Search messages with filters and caching.
 
         Args:
             query: Search query (supports FTS5 syntax)
@@ -315,6 +478,14 @@ class MessageSearchEngine:
         try:
             # Limit results to prevent excessive queries
             limit = min(limit, SEARCH_MAX_RESULTS)
+
+            # Check cache first
+            if self.cache:
+                cached_results = self.cache.get(
+                    query, contact, group_id, start_date, end_date, limit, offset
+                )
+                if cached_results is not None:
+                    return cached_results
 
             # Build query
             sql = """
@@ -374,6 +545,10 @@ class MessageSearchEngine:
                     }
                 )
 
+            # Cache results
+            if self.cache:
+                self.cache.put(query, results, contact, group_id, start_date, end_date, limit, offset)
+
             logger.info(f"Search query '{query}' returned {len(results)} results")
             return results
 
@@ -383,6 +558,22 @@ class MessageSearchEngine:
                 f"Search failed: {e}",
                 {"query": query, "error": str(e)},
             )
+
+    def get_cache_statistics(self) -> Optional[Dict[str, any]]:
+        """
+        Get search cache statistics.
+
+        Returns:
+            Cache statistics dict or None if caching disabled
+        """
+        if self.cache:
+            return self.cache.get_statistics()
+        return None
+
+    def clear_cache(self) -> None:
+        """Clear search result cache."""
+        if self.cache:
+            self.cache.clear()
 
     def search_by_contact(self, contact: str, limit: int = 100) -> List[Dict]:
         """Search all messages with a specific contact.
