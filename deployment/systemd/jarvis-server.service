@@ -1,0 +1,33 @@
+[Unit]
+Description=Jarvis P2P Encrypted Messenger Server
+Documentation=https://github.com/orpheus497/jarvisapp
+After=network.target
+
+[Service]
+Type=simple
+User=jarvis
+Group=jarvis
+WorkingDirectory=/opt/jarvis
+Environment="JARVIS_DATA_DIR=/var/lib/jarvis"
+Environment="JARVIS_LOG_LEVEL=INFO"
+ExecStart=/opt/jarvis/venv/bin/python -m jarvis.server --data-dir /var/lib/jarvis --ipc-port 5999
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jarvis-server
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/jarvis
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+# Resource limits
+LimitNOFILE=65536
+TasksMax=256
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,65 @@
+# Jarvis Docker Build Exclusions
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Jarvis data (don't include in image)
+*.enc
+*.jcard
+*.jexport
+*.db
+*.log
+backups/
+contact_cards/
+account_exports/
+
+# Development docs
+.dev-docs/
+
+# Tests
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# CI/CD
+.github/
+
+# Documentation (only include essential)
+docs/
+
+# Deployment files (except those being used)
+deployment/
+!deployment/docker/
+
+# Scripts (not needed in image)
+scripts/

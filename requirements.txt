@@ -1,4 +1,4 @@
-# Jarvis Messenger v2.1.1 - Requirements
+# Jarvis Messenger v2.3.0 - Requirements
 # All dependencies are FOSS and actively maintained
 
 # Core UI Framework

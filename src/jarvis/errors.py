@@ -5,7 +5,7 @@ This module defines all custom exceptions and error codes used throughout
 the Jarvis application. Each error has a unique code for logging and debugging.
 
 Author: orpheus497
-Version: 2.0.0
+Version: 2.3.0
 """
 
 from enum import Enum

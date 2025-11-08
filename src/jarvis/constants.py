@@ -5,11 +5,11 @@ This module defines all constants used throughout the Jarvis application.
 All magic numbers and configuration defaults are centralized here.
 
 Author: orpheus497
-Version: 2.0.0
+Version: 2.3.0
 """
 
 # Version Information
-VERSION = "2.1.0"
+VERSION = "2.3.0"
 APP_NAME = "Jarvis"
 AUTHOR = "orpheus497"
 
@@ -105,7 +105,7 @@ MAX_GROUP_MEMBERS = 100
 MAX_GROUP_DESCRIPTION_LENGTH = 500
 
 # Protocol Version
-PROTOCOL_VERSION = "2.1"
+PROTOCOL_VERSION = "2.3"
 
 # NAT Traversal Constants (v2.1.0)
 NAT_DETECTION_TIMEOUT = 10  # seconds for STUN requests
@@ -121,7 +121,9 @@ HOLE_PUNCH_INTERVAL = 1  # seconds
 MDNS_SERVICE_TYPE = "_jarvis._tcp.local."
 MDNS_ANNOUNCEMENT_INTERVAL = 60  # seconds
 DHT_BOOTSTRAP_NODES = [
-    # Will be populated with known stable nodes
+    # Configure your own bootstrap nodes in config.toml: [dht] section
+    # Example: bootstrap_nodes = [["192.168.1.100", 6881]]
+    # See docs/CONFIGURATION.md for DHT setup instructions
 ]
 DHT_REPLICATION_FACTOR = 3
 DHT_REFRESH_INTERVAL = 300  # 5 minutes
@@ -168,13 +170,13 @@ SEARCH_CACHE_CLEANUP_INTERVAL = 60  # 1 minute cleanup frequency
 # Feature Flags
 FEATURE_DOUBLE_RATCHET = True
 FEATURE_FILE_TRANSFER = True
-FEATURE_VOICE_MESSAGES = False  # Requires optional dependencies
-FEATURE_QR_CODES = False  # Requires optional dependencies
-FEATURE_POST_QUANTUM_CRYPTO = False  # Requires optional dependencies
+FEATURE_VOICE_MESSAGES = False  # Requires sounddevice/soundfile - see docs/INSTALL.md
+FEATURE_QR_CODES = True  # Fully implemented with pyzbar (v2.3.0)
+FEATURE_POST_QUANTUM_CRYPTO = False  # Requires liboqs-python - experimental
 FEATURE_NAT_TRAVERSAL = True  # v2.1.0
 FEATURE_PEER_DISCOVERY = True  # v2.1.0
 FEATURE_MESSAGE_QUEUE = True  # v2.1.0
 FEATURE_ENHANCED_SECURITY = True  # v2.1.0
-FEATURE_CONNECTION_POOLING = True  # Connection pooling improvements
+FEATURE_CONNECTION_POOLING = True  # Connection pooling improvements (v2.3.0)
 FEATURE_MESSAGE_BATCHING = True  # Message batch processing
-FEATURE_SEARCH_CACHING = True  # Search result caching
+FEATURE_SEARCH_CACHING = True  # Search result caching (v2.3.0)

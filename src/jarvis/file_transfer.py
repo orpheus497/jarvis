@@ -6,7 +6,7 @@ compression, checksums, and resume capability. Supports large files
 with progress tracking and automatic retry.
 
 Author: orpheus497
-Version: 2.0.0
+Version: 2.3.0
 """
 
 import asyncio

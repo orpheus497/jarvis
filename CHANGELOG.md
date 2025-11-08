@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Application version synchronized to 2.3.0 across all module docstrings
+- Protocol version updated from 2.1 to 2.3 for consistency with application version
+- QR code feature flag enabled (FEATURE_QR_CODES = True) reflecting fully implemented scanning functionality
+- Voice message feature flag documentation updated with installation instructions reference
+- Feature flag comments enhanced with version annotations and implementation status
+- Configuration module documentation version updated to 2.3.0
+- README version badge and header updated to 2.3.0
+- requirements.txt version comment updated to 2.3.0
+- DHT bootstrap node configuration updated with comprehensive setup documentation
+- Bootstrap nodes default list now includes configuration instructions and documentation reference
+
+### Added
+- Systemd service file for Linux daemon deployment (deployment/systemd/jarvis-server.service)
+- Systemd service includes security hardening directives (NoNewPrivileges, PrivateTmp, ProtectSystem)
+- Systemd service includes resource limits (LimitNOFILE, TasksMax)
+- Docker support with multi-stage Dockerfile for minimal image size (deployment/docker/Dockerfile)
+- Docker image runs as non-root user for enhanced security
+- Docker health check for container monitoring
+- Docker Compose configuration for simplified deployment (deployment/docker/docker-compose.yml)
+- Docker Compose includes resource limits and health checks
+- Docker Compose volume configuration for persistent data storage
+- Dockerignore file for optimized build context (deployment/docker/.dockerignore)
+- Installation script with dependency checking and automated setup (scripts/install.sh)
+- Installation script supports both user and system-wide installation
+- Installation script includes optional systemd service setup
+- Health check script for monitoring daemon status with exit codes (scripts/health-check.sh)
+- Health check supports multiple validation methods (nc, Python socket)
+- Configuration template file with comprehensive options and documentation (config.toml.example)
+- Configuration template includes all feature categories with inline comments
+- Type hint marker file (src/jarvis/py.typed) for improved IDE support and type checking
+- Deployment documentation with Docker, systemd, and manual deployment instructions (docs/DEPLOYMENT.md)
+- Deployment documentation includes security considerations and troubleshooting
+- Deployment documentation covers firewall configuration and network security
+- DHT bootstrap configuration section in CONFIGURATION.md with setup instructions
+- DHT bootstrap documentation includes three setup options (existing nodes, own node, peer-to-peer)
+- DHT troubleshooting guide with common issues and solutions
+- Voice message configuration section in CONFIGURATION.md with installation instructions
+- Voice message setup instructions for Linux, macOS, and Windows platforms
+- Voice message audio dependency installation guide
+- Voice message configuration options with quality and format settings
+- Voice message troubleshooting section with common audio issues
+- Configuration documentation version updated to 2.3.0
+
+### Fixed
+- Version inconsistency resolved: All module docstrings updated from 2.0.0 to 2.3.0
+- Version inconsistency resolved: __init__.py updated from 2.1.0 to 2.3.0
+- Version inconsistency resolved: constants.py updated from 2.1.0 to 2.3.0
+- Feature flag accuracy: QR_CODES flag now reflects actual implementation status
+- Documentation accuracy: All version references synchronized to 2.3.0
+
 ## [2.3.0] - 2025-11-08
 
 ### Added

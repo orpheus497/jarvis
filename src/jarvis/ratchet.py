@@ -10,7 +10,7 @@ The Double Ratchet combines:
 - Message keys that are deleted immediately after use
 
 Author: orpheus497
-Version: 2.0.0
+Version: 2.3.0
 """
 
 import logging
