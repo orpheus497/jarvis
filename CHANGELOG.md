@@ -63,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Pre-commit Hooks:** .pre-commit-config.yaml with ruff, mypy, security checks (bandit), and file validation
 - **Test Infrastructure:** conftest.py with pytest fixtures for temp directories, sample data, and test markers
 - **Example Tests:** test_utils.py demonstrating test infrastructure with 30+ unit tests for validation functions
+- **CONTRIBUTING.md:** Comprehensive contributor guidelines with development setup, workflow, code style, and testing guidelines
+- **ARCHITECTURE.md:** Detailed system architecture documentation with diagrams, data flow, security architecture, and component descriptions
 
 ### Changed
 - All persistence save methods now use atomic file writes (temp file + rename) for data safety and crash resistance
