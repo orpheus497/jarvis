@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added timestamp-based expiration for skipped message keys (1-hour lifetime)
   - Enhanced DoS protection against memory exhaustion attacks via message gap manipulation
   - Improved logging for skip key operations and cleanup events
+- **HIGH:** Fixed SQLite thread safety vulnerability in message queue (message_queue.py)
+  - Added threading.Lock for all database operations
+  - Prevents concurrent access to SQLite connection preventing database corruption
+  - Protects against race conditions in multi-threaded environment
+  - All database operations now atomic and thread-safe
 
 ### Fixed
 - Fixed file transfer encryption to use secrets module for cryptographically secure nonce generation
@@ -39,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added input validation for ciphertext length
   - Separated authentication failures from other decryption errors
   - Improved error messages with context
+- Fixed thread safety issues in message queue (message_queue.py)
+  - All database operations now protected by threading.Lock
+  - Added exc_info=True to exception logging for better debugging
+  - Improved error handling with specific exception information
 - Added proper error handling and logging to file transfer operations
 - Added OSError-specific exception handling for file I/O operations in file transfer
 - Session manager now uses atomic file writes (temp file + rename) to prevent corruption
@@ -51,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved logging throughout file transfer and session management modules
 - Double Ratchet skip key storage now includes timestamps for expiration tracking
 - Ratchet skip key cleanup now removes batches of old keys instead of single keys
+- Message queue now uses threading.Lock for thread-safe database access
+- All message queue methods now protected against concurrent access
 
 ### Added
 - Atomic file writes in session manager to prevent data corruption during crashes
