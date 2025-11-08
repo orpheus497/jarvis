@@ -33,6 +33,7 @@ from .constants import (
     NONCE_SIZE,
 )
 from .errors import ErrorCode, FileTransferError
+from .metrics import get_app_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -296,6 +297,11 @@ class FileTransferSession:
 
         logger.info(f"Starting file transfer: {metadata.filename}")
 
+        # Track file send start in application metrics
+        metrics = get_app_metrics()
+        metrics.increment_counter("files.send_started")
+        metrics.record_histogram("files.size_bytes", metadata.size)
+
         try:
             with open(file_path, "rb") as f:
                 for chunk_num in range(metadata.total_chunks):
@@ -347,12 +353,24 @@ class FileTransferSession:
             elapsed = time.time() - self.start_time
             logger.info(f"File transfer completed: {metadata.filename} in {elapsed:.2f}s")
 
+            # Track successful file send in application metrics
+            metrics.increment_counter("files.sent")
+            metrics.record_histogram("files.duration_seconds", elapsed)
+
             return True
 
         except FileTransferError:
+            # Track failed file send in application metrics
+            metrics.increment_counter("files.failed")
+
             raise
         except OSError as e:
             logger.error(f"I/O error during file transfer: {e}")
+
+            # Track failed file send in application metrics
+            metrics.increment_counter("files.failed")
+            metrics.increment_counter("errors.io")
+
             raise FileTransferError(
                 ErrorCode.E600_FILE_TRANSFER_ERROR,
                 f"File read error: {e}",
@@ -360,6 +378,11 @@ class FileTransferSession:
             ) from e
         except Exception as e:
             logger.error(f"Unexpected error during file transfer: {e}", exc_info=True)
+
+            # Track failed file send in application metrics
+            metrics.increment_counter("files.failed")
+            metrics.increment_counter("errors.total")
+
             raise FileTransferError(
                 ErrorCode.E600_FILE_TRANSFER_ERROR,
                 f"File transfer failed: {e}",
@@ -457,6 +480,10 @@ class FileTransferSession:
 
         logger.info(f"Reconstructing file: {output_path}")
 
+        # Track file receive start in application metrics
+        metrics = get_app_metrics()
+        elapsed = time.time() - self.start_time
+
         try:
             # Ensure output directory exists
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -482,9 +509,21 @@ class FileTransferSession:
                 f"File reconstructed successfully: {output_path} " f"({self.metadata.size} bytes)"
             )
 
+            # Track successful file receive in application metrics
+            metrics.increment_counter("files.received")
+            metrics.record_histogram("files.duration_seconds", elapsed)
+            metrics.record_histogram("files.size_bytes", self.metadata.size)
+
         except FileTransferError:
+            # Track failed file receive in application metrics
+            metrics.increment_counter("files.failed")
+
             raise
         except Exception as e:
+            # Track failed file receive in application metrics
+            metrics.increment_counter("files.failed")
+            metrics.increment_counter("errors.total")
+
             raise FileTransferError(
                 ErrorCode.E600_FILE_TRANSFER_ERROR,
                 f"File reconstruction failed: {e}",

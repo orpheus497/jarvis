@@ -135,6 +135,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Quality indicators (1-5 bars) based on connection performance
   - Metric snapshots for trending and analysis
   - Global singleton pattern for easy access (get_app_metrics())
+- **NEW:** Metrics integration throughout application subsystems
+  - Network layer (network.py) tracks connection attempts, successes, failures, and active connections
+  - File transfer (file_transfer.py) tracks files sent/received/failed, transfer duration, and file sizes
+  - Message handling tracks messages sent/received/failed/queued/delivered
+  - Connection quality tracking with latency histograms
+  - Error tracking by category (network, crypto, I/O errors)
+  - Incoming/rejected connection monitoring
+  - Queue-based message delivery tracking
 
 ### Performance
 - Reduced memory usage in Double Ratchet by removing expired skip keys automatically
