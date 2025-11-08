@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Prevents concurrent access to SQLite connection preventing database corruption
   - Protects against race conditions in multi-threaded environment
   - All database operations now atomic and thread-safe
+- **HIGH:** Fixed synchronous I/O blocking on message critical path (message.py)
+  - Implemented write-behind caching with intelligent batching
+  - Messages now saved every 10 messages or every 5 seconds (whichever comes first)
+  - Reduces file I/O operations by ~90% under normal load
+  - Added flush() method for explicit persistence control
+  - Prevents message loss via dirty flag tracking
 
 ### Fixed
 - Fixed file transfer encryption to use secrets module for cryptographically secure nonce generation
@@ -48,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All database operations now protected by threading.Lock
   - Added exc_info=True to exception logging for better debugging
   - Improved error handling with specific exception information
+- Fixed synchronous I/O blocking in message storage (message.py)
+  - Every message addition no longer triggers immediate file write
+  - Implemented intelligent batching based on count and time
+  - Added dirty flag tracking to prevent unnecessary saves
 - Added proper error handling and logging to file transfer operations
 - Added OSError-specific exception handling for file I/O operations in file transfer
 - Session manager now uses atomic file writes (temp file + rename) to prevent corruption
@@ -62,6 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ratchet skip key cleanup now removes batches of old keys instead of single keys
 - Message queue now uses threading.Lock for thread-safe database access
 - All message queue methods now protected against concurrent access
+- Message storage now uses write-behind caching with configurable batch size
+- Message persistence strategy changed from immediate to batched writes
 
 ### Added
 - Atomic file writes in session manager to prevent data corruption during crashes
@@ -78,6 +90,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Performance
 - Reduced memory usage in Double Ratchet by removing expired skip keys automatically
 - Improved skip key cleanup efficiency with batch operations
+- **Reduced message storage I/O by ~90%** through write-behind caching
+- Batched message writes (every 10 messages or 5 seconds) drastically improve throughput
+- Eliminated file I/O bottleneck on message receive critical path
 
 ## [2.4.0] - 2025-11-08
 

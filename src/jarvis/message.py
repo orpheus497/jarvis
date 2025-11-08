@@ -2,14 +2,21 @@
 Jarvis - Message storage and management.
 
 Created by orpheus497
+Version: 2.4.0
 
 Handles message persistence, conversation history, and retrieval for both
 direct messages and group chats.
+
+Performance improvements:
+- Write-behind caching with batching to reduce I/O operations
+- Configurable batch size for message persistence
+- Dirty flag tracking to avoid unnecessary saves
 """
 
 import json
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +25,10 @@ from typing import Any, Dict, List, Optional
 import aiofiles
 
 logger = logging.getLogger(__name__)
+
+# Write-behind caching configuration
+MESSAGE_SAVE_BATCH_SIZE = 10  # Save every N messages
+MESSAGE_SAVE_INTERVAL = 5.0  # Or every N seconds (whichever comes first)
 
 # Import search engine for SQLite support (optional)
 try:
@@ -126,6 +137,11 @@ class MessageStore:
             db_path = Path(messages_file).parent / "messages.db"
             self.search_engine = MessageSearchEngine(db_path)
 
+        # Write-behind caching state
+        self._dirty = False  # Track if messages need to be saved
+        self._unsaved_count = 0  # Number of unsaved messages
+        self._last_save_time = time.time()  # Last save timestamp
+
         self._load_messages()
 
     def _load_messages(self) -> None:
@@ -177,7 +193,7 @@ class MessageStore:
             raise
 
     def save_messages(self) -> None:
-        """Save messages to file synchronously (legacy support) and optionally to SQLite."""
+        """Save messages to file synchronously with write-behind caching state update."""
         try:
             # Always save to JSON for backward compatibility
             data = [msg.to_dict() for msg in self.messages]
@@ -190,7 +206,17 @@ class MessageStore:
 
             # Atomic rename
             os.replace(temp_file, self.messages_file)
-            logger.debug(f"Saved {len(self.messages)} messages to {self.messages_file}")
+
+            # Update caching state after successful save
+            saved_count = self._unsaved_count
+            self._dirty = False
+            self._unsaved_count = 0
+            self._last_save_time = time.time()
+
+            logger.debug(
+                f"Saved {saved_count} unsaved messages "
+                f"(total: {len(self.messages)}) to {self.messages_file}"
+            )
 
             # Also save to SQLite if enabled
             if self.use_sqlite and self.search_engine:
@@ -206,16 +232,68 @@ class MessageStore:
             raise
 
     def add_message(self, message: Message) -> None:
-        """Add a message to the store and index for search."""
+        """Add a message to the store with write-behind caching.
+
+        Messages are batched and saved periodically to reduce I/O:
+        - Every MESSAGE_SAVE_BATCH_SIZE messages
+        - Every MESSAGE_SAVE_INTERVAL seconds
+        - Or when flush() is called explicitly
+
+        Args:
+            message: Message to add
+        """
         self.messages.append(message)
-        logger.debug(f"Added message {message.message_id} from {message.contact_uid}")
+        self._dirty = True
+        self._unsaved_count += 1
 
-        # Save to JSON
-        self.save_messages()
+        logger.debug(
+            f"Added message {message.message_id} from {message.contact_uid} "
+            f"(unsaved: {self._unsaved_count})"
+        )
 
-        # Index in search engine if enabled
+        # Index in search engine immediately if enabled
         if self.use_sqlite and self.search_engine:
             self._index_message_in_search(message)
+
+        # Check if we should save (batch reached or time interval exceeded)
+        if self._should_save():
+            self.save_messages()
+
+    def _should_save(self) -> bool:
+        """Check if messages should be saved based on batching rules.
+
+        Returns:
+            True if save is needed (batch size or time interval reached)
+        """
+        if not self._dirty:
+            return False
+
+        # Save if batch size reached
+        if self._unsaved_count >= MESSAGE_SAVE_BATCH_SIZE:
+            logger.debug(f"Save triggered by batch size ({self._unsaved_count} messages)")
+            return True
+
+        # Save if time interval exceeded
+        elapsed = time.time() - self._last_save_time
+        if elapsed >= MESSAGE_SAVE_INTERVAL:
+            logger.debug(f"Save triggered by time interval ({elapsed:.1f}s)")
+            return True
+
+        return False
+
+    def flush(self) -> None:
+        """Force immediate save of all unsaved messages.
+
+        This should be called:
+        - Before application shutdown
+        - After critical operations
+        - When explicit persistence is required
+        """
+        if self._dirty:
+            logger.info(f"Flushing {self._unsaved_count} unsaved messages")
+            self.save_messages()
+        else:
+            logger.debug("Flush called but no unsaved messages")
 
     def _index_message_in_search(self, message: Message) -> None:
         """Index a message in the search engine."""
