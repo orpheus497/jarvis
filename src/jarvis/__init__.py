@@ -5,11 +5,11 @@ A privacy-focused, end-to-end encrypted messaging system with
 file transfer, group chat, NAT traversal, and advanced security features.
 
 Author: orpheus497
-Version: 2.3.0
+Version: 2.4.0
 License: MIT
 """
 
-__version__ = "2.3.0"
+__version__ = "2.4.0"
 __author__ = "orpheus497"
 __license__ = "MIT"
 
