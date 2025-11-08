@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2025-11-08
+
 ### Security
 - Fixed critical command injection vulnerability in notification system (notification.py)
 - Notification system now sanitizes all user-supplied input before shell command construction
@@ -17,9 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added comprehensive input sanitization system to prevent injection attacks across all modules
 
 ### Fixed
-- Version inconsistency resolved: pyproject.toml synchronized to version 2.3.0
-- Version inconsistency resolved: init.py updated from 1.0.0 to 2.3.0
+- Version inconsistency resolved: pyproject.toml synchronized to version 2.4.0
+- Version inconsistency resolved: __init__.py updated to 2.4.0
+- Version inconsistency resolved: constants.py updated to 2.4.0
 - Notification system injection vulnerabilities patched with input validation and sanitization
+- Dependency duplication resolved: sounddevice, soundfile, and pyzbar moved to optional dependencies only
 
 ### Added
 - New sanitization module (sanitization.py) with comprehensive input validation
@@ -35,14 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All features installable via `pip install jarvis-messenger[all]`
 
 ### Changed
-- Application version synchronized to 2.3.0 across all module docstrings
+- Application version synchronized to 2.4.0 across all module docstrings
 - Protocol version updated from 2.1 to 2.3 for consistency with application version
 - QR code feature flag enabled (FEATURE_QR_CODES = True) reflecting fully implemented scanning functionality
 - Voice message feature flag documentation updated with installation instructions reference
 - Feature flag comments enhanced with version annotations and implementation status
-- Configuration module documentation version updated to 2.3.0
-- README version badge and header updated to 2.3.0
-- requirements.txt version comment updated to 2.3.0
+- Configuration module documentation version updated to 2.4.0
+- README version badge and header updated to 2.4.0
+- requirements.txt version comment updated to 2.4.0
 - DHT bootstrap node configuration updated with comprehensive setup documentation
 - Bootstrap nodes default list now includes configuration instructions and documentation reference
 
@@ -76,14 +80,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Voice message audio dependency installation guide
 - Voice message configuration options with quality and format settings
 - Voice message troubleshooting section with common audio issues
-- Configuration documentation version updated to 2.3.0
+- Configuration documentation version updated to 2.4.0
 
 ### Fixed
-- Version inconsistency resolved: All module docstrings updated from 2.0.0 to 2.3.0
-- Version inconsistency resolved: __init__.py updated from 2.1.0 to 2.3.0
-- Version inconsistency resolved: constants.py updated from 2.1.0 to 2.3.0
+- Version inconsistency resolved: All module docstrings updated from 2.0.0 to 2.4.0
 - Feature flag accuracy: QR_CODES flag now reflects actual implementation status
-- Documentation accuracy: All version references synchronized to 2.3.0
+- Documentation accuracy: All version references synchronized to 2.4.0
+
+### Removed
+- SUMMARY.txt file (outdated documentation referencing v2.1.0)
 
 ## [2.3.0] - 2025-11-08
 
