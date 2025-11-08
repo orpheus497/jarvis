@@ -6,24 +6,24 @@ Created by orpheus497
 Provides various utility functions for formatting, validation, and helpers.
 """
 
+import ipaddress
 import re
 from datetime import datetime, timezone
-from typing import Optional
 
 
-def format_timestamp(iso_timestamp: str, format_str: str = '%Y-%m-%d %H:%M:%S') -> str:
+def format_timestamp(iso_timestamp: str, format_str: str = "%Y-%m-%d %H:%M:%S") -> str:
     """
     Format an ISO timestamp to a human-readable string.
-    
+
     Args:
         iso_timestamp: ISO 8601 timestamp string
         format_str: strftime format string
-    
+
     Returns:
         Formatted timestamp string
     """
     try:
-        dt = datetime.fromisoformat(iso_timestamp.replace('Z', '+00:00'))
+        dt = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
         return dt.strftime(format_str)
     except:
         return iso_timestamp
@@ -32,22 +32,22 @@ def format_timestamp(iso_timestamp: str, format_str: str = '%Y-%m-%d %H:%M:%S') 
 def format_timestamp_relative(iso_timestamp: str) -> str:
     """
     Format an ISO timestamp as relative time (e.g., '5 minutes ago').
-    
+
     Args:
         iso_timestamp: ISO 8601 timestamp string
-    
+
     Returns:
         Relative time string
     """
     try:
-        dt = datetime.fromisoformat(iso_timestamp.replace('Z', '+00:00'))
+        dt = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
         diff = now - dt
-        
+
         seconds = diff.total_seconds()
-        
+
         if seconds < 60:
-            return 'just now'
+            return "just now"
         elif seconds < 3600:
             minutes = int(seconds / 60)
             return f'{minutes} minute{"s" if minutes != 1 else ""} ago'
@@ -58,7 +58,7 @@ def format_timestamp_relative(iso_timestamp: str) -> str:
             days = int(seconds / 86400)
             return f'{days} day{"s" if days != 1 else ""} ago'
         else:
-            return format_timestamp(iso_timestamp, '%Y-%m-%d')
+            return format_timestamp(iso_timestamp, "%Y-%m-%d")
     except:
         return iso_timestamp
 
@@ -66,127 +66,156 @@ def format_timestamp_relative(iso_timestamp: str) -> str:
 def validate_port(port: int) -> bool:
     """
     Validate a port number.
-    
+
     Args:
         port: Port number to validate
-    
+
     Returns:
         True if valid, False otherwise
     """
     return 1024 <= port <= 65535
 
 
-def validate_ip(ip: str) -> bool:
+def validate_ip(ip: str, allow_private: bool = True, allow_loopback: bool = False) -> bool:
     """
-    Validate an IP address (IPv4).
-    
+    Validate an IP address (IPv4 or IPv6) with proper range checking.
+
+    Rejects invalid IPs, loopback addresses (unless allow_loopback=True),
+    unspecified addresses (0.0.0.0, ::), reserved addresses, link-local,
+    and multicast addresses.
+
     Args:
-        ip: IP address string
-    
+        ip: IP address string (IPv4 or IPv6)
+        allow_private: Whether to allow private IP ranges (default: True)
+        allow_loopback: Whether to allow loopback addresses (default: False)
+
     Returns:
-        True if valid IPv4, False otherwise
+        True if valid IP address, False otherwise
     """
-    pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
-    if not re.match(pattern, ip):
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+
+        # Reject loopback addresses (127.0.0.0/8, ::1) unless explicitly allowed
+        if not allow_loopback and ip_obj.is_loopback:
+            return False
+
+        # Reject unspecified addresses (0.0.0.0, ::)
+        if ip_obj.is_unspecified:
+            return False
+
+        # Reject reserved addresses
+        if ip_obj.is_reserved:
+            return False
+
+        # Reject link-local addresses (169.254.0.0/16, fe80::/10)
+        if ip_obj.is_link_local:
+            return False
+
+        # Reject multicast addresses
+        if ip_obj.is_multicast:
+            return False
+
+        # Optionally reject private addresses (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, etc.)
+        return not (not allow_private and ip_obj.is_private)
+
+    except ValueError:
+        # Invalid IP address format
         return False
-    
-    parts = ip.split('.')
-    return all(0 <= int(part) <= 255 for part in parts)
 
 
 def validate_hostname(hostname: str) -> bool:
     """
     Validate a hostname.
-    
+
     Args:
         hostname: Hostname string
-    
+
     Returns:
         True if valid hostname, False otherwise
     """
     if len(hostname) > 255:
         return False
-    
-    if hostname[-1] == '.':
+
+    if hostname[-1] == ".":
         hostname = hostname[:-1]
-    
-    pattern = r'^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$'
+
+    pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
     return bool(re.match(pattern, hostname))
 
 
 def validate_uid(uid: str) -> bool:
     """
     Validate a UID format.
-    
+
     Args:
         uid: UID string
-    
+
     Returns:
         True if valid UID format, False otherwise
     """
     # UID should be 32 hexadecimal characters
-    pattern = r'^[a-f0-9]{32}$'
+    pattern = r"^[a-f0-9]{32}$"
     return bool(re.match(pattern, uid))
 
 
 def validate_group_uid(gid: str) -> bool:
     """
     Validate a group UID format.
-    
+
     Args:
         gid: Group ID string
-    
+
     Returns:
         True if valid group ID format, False otherwise
     """
     # Group ID should be 'g' followed by 31 hexadecimal characters
-    pattern = r'^g[a-f0-9]{31}$'
+    pattern = r"^g[a-f0-9]{31}$"
     return bool(re.match(pattern, gid))
 
 
-def truncate_string(s: str, max_length: int, suffix: str = '...') -> str:
+def truncate_string(s: str, max_length: int, suffix: str = "...") -> str:
     """
     Truncate a string to a maximum length.
-    
+
     Args:
         s: String to truncate
         max_length: Maximum length
         suffix: Suffix to add if truncated
-    
+
     Returns:
         Truncated string
     """
     if len(s) <= max_length:
         return s
-    return s[:max_length - len(suffix)] + suffix
+    return s[: max_length - len(suffix)] + suffix
 
 
 def format_fingerprint(fingerprint: str) -> str:
     """
     Format a fingerprint for display with spaces every 4 characters.
-    
+
     Args:
         fingerprint: Hex fingerprint string
-    
+
     Returns:
         Formatted fingerprint
     """
-    return ' '.join(fingerprint[i:i+4] for i in range(0, len(fingerprint), 4))
+    return " ".join(fingerprint[i : i + 4] for i in range(0, len(fingerprint), 4))
 
 
 def get_initials(name: str) -> str:
     """
     Get initials from a name.
-    
+
     Args:
         name: Name string
-    
+
     Returns:
         Initials (up to 2 characters)
     """
     parts = name.strip().split()
     if len(parts) == 0:
-        return '??'
+        return "??"
     elif len(parts) == 1:
         return parts[0][:2].upper()
     else:
@@ -196,34 +225,35 @@ def get_initials(name: str) -> str:
 def sanitize_filename(filename: str) -> str:
     """
     Sanitize a filename by removing invalid characters.
-    
+
     Args:
         filename: Filename to sanitize
-    
+
     Returns:
         Sanitized filename
     """
     # Remove invalid characters
     invalid_chars = '<>:"/\\|?*'
     for char in invalid_chars:
-        filename = filename.replace(char, '_')
-    
+        filename = filename.replace(char, "_")
+
     # Remove leading/trailing spaces and dots
-    filename = filename.strip('. ')
-    
+    filename = filename.strip(". ")
+
     # Ensure not empty
     if not filename:
-        filename = 'unnamed'
-    
+        filename = "unnamed"
+
     return filename
 
 
 def get_platform_info() -> str:
     """
     Get platform information string.
-    
+
     Returns:
         Platform information
     """
     import platform
+
     return f"{platform.system()} {platform.release()}"

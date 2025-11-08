@@ -30,7 +30,7 @@ Dependencies:
 All dependencies are free, open-source, and royalty-free.
 """
 
-__version__ = '1.0.0'
-__author__ = 'orpheus497'
-__license__ = 'MIT'
-__description__ = 'A terminal-based peer-to-peer end-to-end encrypted messenger with multi-layer encryption and group chat'
+__version__ = "1.0.0"
+__author__ = "orpheus497"
+__license__ = "MIT"
+__description__ = "A terminal-based peer-to-peer end-to-end encrypted messenger with multi-layer encryption and group chat"

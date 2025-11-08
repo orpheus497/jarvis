@@ -281,13 +281,7 @@ class ConnectionMetrics:
         """
         quality = self.get_quality_indicator()
 
-        descriptions = {
-            5: "Excellent",
-            4: "Good",
-            3: "Fair",
-            2: "Poor",
-            1: "Very Poor"
-        }
+        descriptions = {5: "Excellent", 4: "Good", 3: "Fair", 2: "Poor", 1: "Very Poor"}
 
         return descriptions.get(quality, "Unknown")
 
@@ -336,7 +330,7 @@ class ConnectionMetrics:
                     "indicator": quality,
                     "description": self.get_quality_description(),
                     "bars": "█" * quality + "░" * (5 - quality),
-                }
+                },
             }
 
     def reset_metrics(self) -> None:
@@ -357,10 +351,7 @@ class ConnectionMetrics:
     def __repr__(self) -> str:
         """String representation of metrics."""
         stats = self.get_statistics()
-        latency = stats['latency']['average_ms']
-        quality = stats['quality']['description']
+        latency = stats["latency"]["average_ms"]
+        quality = stats["quality"]["description"]
 
-        return (
-            f"ConnectionMetrics({self.address}, "
-            f"latency={latency}ms, quality={quality})"
-        )
+        return f"ConnectionMetrics({self.address}, " f"latency={latency}ms, quality={quality})"

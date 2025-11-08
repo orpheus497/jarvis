@@ -14,23 +14,23 @@ import logging
 import time
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, List, Optional, Callable
+from typing import Callable, Dict, List, Optional
 
 import numpy as np
 
 from .constants import (
+    VOICE_CHANNELS,
     VOICE_MAX_DURATION,
     VOICE_SAMPLE_RATE,
-    VOICE_CHANNELS,
-    VOICE_CHUNK_DURATION,
 )
-from .errors import JarvisError, ErrorCode
+from .errors import ErrorCode, JarvisError
 
 logger = logging.getLogger(__name__)
 
 # Try to import optional dependencies
 try:
     import sounddevice as sd
+
     SOUNDDEVICE_AVAILABLE = True
 except ImportError:
     SOUNDDEVICE_AVAILABLE = False
@@ -38,6 +38,7 @@ except ImportError:
 
 try:
     import soundfile as sf
+
     SOUNDFILE_AVAILABLE = True
 except ImportError:
     SOUNDFILE_AVAILABLE = False
@@ -68,7 +69,7 @@ class VoiceRecorder:
         sample_rate: int = VOICE_SAMPLE_RATE,
         channels: int = VOICE_CHANNELS,
         max_duration: int = VOICE_MAX_DURATION,
-        level_callback: Optional[Callable[[float], None]] = None
+        level_callback: Optional[Callable[[float], None]] = None,
     ):
         """Initialize voice recorder.
 
@@ -84,7 +85,7 @@ class VoiceRecorder:
         if not VOICE_AVAILABLE:
             raise JarvisError(
                 ErrorCode.E001_UNKNOWN_ERROR,
-                "Voice recording not available - install sounddevice and soundfile"
+                "Voice recording not available - install sounddevice and soundfile",
             )
 
         self.sample_rate = sample_rate
@@ -96,8 +97,7 @@ class VoiceRecorder:
         self.level_callback = level_callback
 
         logger.info(
-            f"Voice recorder initialized: "
-            f"{sample_rate}Hz, {channels}ch, max {max_duration}s"
+            f"Voice recorder initialized: " f"{sample_rate}Hz, {channels}ch, max {max_duration}s"
         )
 
     def record(self) -> None:
@@ -107,10 +107,7 @@ class VoiceRecorder:
             JarvisError: If recording fails or already recording
         """
         if self.recording:
-            raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                "Already recording"
-            )
+            raise JarvisError(ErrorCode.E001_UNKNOWN_ERROR, "Already recording")
 
         logger.info("Starting voice recording")
 
@@ -140,9 +137,7 @@ class VoiceRecorder:
 
             # Start input stream
             with sd.InputStream(
-                samplerate=self.sample_rate,
-                channels=self.channels,
-                callback=callback
+                samplerate=self.sample_rate, channels=self.channels, callback=callback
             ):
                 # Record until stopped or max duration reached
                 while self.recording:
@@ -154,9 +149,7 @@ class VoiceRecorder:
         except Exception as e:
             self.recording = False
             raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                f"Recording failed: {e}",
-                {"error": str(e)}
+                ErrorCode.E001_UNKNOWN_ERROR, f"Recording failed: {e}", {"error": str(e)}
             )
         finally:
             self.recording = False
@@ -181,7 +174,7 @@ class VoiceRecorder:
         total_samples = sum(len(chunk) for chunk in self.audio_data)
         return total_samples / self.sample_rate
 
-    def save(self, output_path: Path, format: str = 'WAV') -> None:
+    def save(self, output_path: Path, format: str = "WAV") -> None:
         """Save recorded audio to file.
 
         Args:
@@ -192,10 +185,7 @@ class VoiceRecorder:
             JarvisError: If no audio recorded or save fails
         """
         if not self.audio_data:
-            raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                "No audio data to save"
-            )
+            raise JarvisError(ErrorCode.E001_UNKNOWN_ERROR, "No audio data to save")
 
         try:
             # Concatenate all audio chunks
@@ -205,26 +195,17 @@ class VoiceRecorder:
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Save audio file
-            sf.write(
-                str(output_path),
-                audio,
-                self.sample_rate,
-                format=format
-            )
+            sf.write(str(output_path), audio, self.sample_rate, format=format)
 
             duration = self.get_duration()
-            logger.info(
-                f"Saved voice message: {output_path} ({duration:.1f}s)"
-            )
+            logger.info(f"Saved voice message: {output_path} ({duration:.1f}s)")
 
         except Exception as e:
             raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                f"Failed to save audio: {e}",
-                {"error": str(e)}
+                ErrorCode.E001_UNKNOWN_ERROR, f"Failed to save audio: {e}", {"error": str(e)}
             )
 
-    def encode(self, format: str = 'WAV') -> bytes:
+    def encode(self, format: str = "WAV") -> bytes:
         """Encode recorded audio to bytes.
 
         Args:
@@ -237,10 +218,7 @@ class VoiceRecorder:
             JarvisError: If encoding fails
         """
         if not self.audio_data:
-            raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                "No audio data to encode"
-            )
+            raise JarvisError(ErrorCode.E001_UNKNOWN_ERROR, "No audio data to encode")
 
         try:
             # Concatenate all audio chunks
@@ -259,9 +237,7 @@ class VoiceRecorder:
 
         except Exception as e:
             raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                f"Failed to encode audio: {e}",
-                {"error": str(e)}
+                ErrorCode.E001_UNKNOWN_ERROR, f"Failed to encode audio: {e}", {"error": str(e)}
             )
 
 
@@ -285,7 +261,7 @@ class VoicePlayer:
         if not VOICE_AVAILABLE:
             raise JarvisError(
                 ErrorCode.E001_UNKNOWN_ERROR,
-                "Voice playback not available - install sounddevice and soundfile"
+                "Voice playback not available - install sounddevice and soundfile",
             )
 
         self.playing = False
@@ -304,15 +280,11 @@ class VoicePlayer:
             JarvisError: If playback fails
         """
         if self.playing:
-            raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                "Already playing audio"
-            )
+            raise JarvisError(ErrorCode.E001_UNKNOWN_ERROR, "Already playing audio")
 
         if not audio_path and not audio_data:
             raise JarvisError(
-                ErrorCode.E002_INVALID_ARGUMENT,
-                "Either audio_path or audio_data must be provided"
+                ErrorCode.E002_INVALID_ARGUMENT, "Either audio_path or audio_data must be provided"
             )
 
         try:
@@ -336,9 +308,7 @@ class VoicePlayer:
         except Exception as e:
             self.playing = False
             raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                f"Playback failed: {e}",
-                {"error": str(e)}
+                ErrorCode.E001_UNKNOWN_ERROR, f"Playback failed: {e}", {"error": str(e)}
             )
 
     def stop(self) -> None:
@@ -355,9 +325,7 @@ class VoicePlayer:
 
     @staticmethod
     def get_waveform(
-        audio_path: Optional[Path] = None,
-        audio_data: Optional[bytes] = None,
-        width: int = 100
+        audio_path: Optional[Path] = None, audio_data: Optional[bytes] = None, width: int = 100
     ) -> List[int]:
         """Get waveform visualization data.
 
@@ -373,15 +341,11 @@ class VoicePlayer:
             JarvisError: If waveform generation fails
         """
         if not VOICE_AVAILABLE:
-            raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                "Voice features not available"
-            )
+            raise JarvisError(ErrorCode.E001_UNKNOWN_ERROR, "Voice features not available")
 
         if not audio_path and not audio_data:
             raise JarvisError(
-                ErrorCode.E002_INVALID_ARGUMENT,
-                "Either audio_path or audio_data must be provided"
+                ErrorCode.E002_INVALID_ARGUMENT, "Either audio_path or audio_data must be provided"
             )
 
         try:
@@ -390,7 +354,7 @@ class VoicePlayer:
                 audio, sample_rate = sf.read(str(audio_path))
             else:
                 buffer = BytesIO(audio_data)
-                audio, sample_rate = sf.read(buffer)
+                audio, _sample_rate = sf.read(buffer)
 
             # If stereo, convert to mono
             if len(audio.shape) > 1:
@@ -420,9 +384,7 @@ class VoicePlayer:
 
         except Exception as e:
             raise JarvisError(
-                ErrorCode.E001_UNKNOWN_ERROR,
-                f"Failed to generate waveform: {e}",
-                {"error": str(e)}
+                ErrorCode.E001_UNKNOWN_ERROR, f"Failed to generate waveform: {e}", {"error": str(e)}
             )
 
 
@@ -445,29 +407,26 @@ def get_input_devices() -> List[Dict]:
         JarvisError: If voice features are not available
     """
     if not VOICE_AVAILABLE:
-        raise JarvisError(
-            ErrorCode.E001_UNKNOWN_ERROR,
-            "Voice features not available"
-        )
+        raise JarvisError(ErrorCode.E001_UNKNOWN_ERROR, "Voice features not available")
 
     try:
         devices = sd.query_devices()
         input_devices = []
 
         for i, device in enumerate(devices):
-            if device['max_input_channels'] > 0:
-                input_devices.append({
-                    'index': i,
-                    'name': device['name'],
-                    'channels': device['max_input_channels'],
-                    'sample_rate': device['default_samplerate'],
-                })
+            if device["max_input_channels"] > 0:
+                input_devices.append(
+                    {
+                        "index": i,
+                        "name": device["name"],
+                        "channels": device["max_input_channels"],
+                        "sample_rate": device["default_samplerate"],
+                    }
+                )
 
         return input_devices
 
     except Exception as e:
         raise JarvisError(
-            ErrorCode.E001_UNKNOWN_ERROR,
-            f"Failed to query devices: {e}",
-            {"error": str(e)}
+            ErrorCode.E001_UNKNOWN_ERROR, f"Failed to query devices: {e}", {"error": str(e)}
         )

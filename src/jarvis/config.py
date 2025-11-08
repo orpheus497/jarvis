@@ -24,18 +24,17 @@ else:
         tomllib = None
 
 from .constants import (
-    DEFAULT_SERVER_PORT,
-    DEFAULT_HOST,
+    BACKUP_RETENTION_DAYS,
+    CONFIG_FILENAME,
     CONNECTION_TIMEOUT,
+    DEFAULT_DATA_DIR,
+    DEFAULT_HOST,
+    DEFAULT_SERVER_PORT,
     HEARTBEAT_INTERVAL,
     MAX_MESSAGE_SIZE,
     RATE_LIMIT_MESSAGES_PER_MINUTE,
-    BACKUP_RETENTION_DAYS,
-    DEFAULT_DATA_DIR,
-    CONFIG_FILENAME,
 )
 from .errors import ConfigError, ErrorCode
-
 
 # Default configuration dictionary
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -144,9 +143,7 @@ class Config:
 
         return config
 
-    def _merge_config(
-        self, base: Dict[str, Any], override: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _merge_config(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
         """Recursively merge override config into base config.
 
         Args:
@@ -187,7 +184,7 @@ class Config:
             if not isinstance(settings, dict):
                 continue
 
-            for key in settings.keys():
+            for key in settings:
                 env_var = f"JARVIS_{section.upper()}_{key.upper()}"
                 env_value = os.environ.get(env_var)
 

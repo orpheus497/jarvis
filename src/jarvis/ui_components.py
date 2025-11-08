@@ -9,13 +9,14 @@ Author: orpheus497
 Version: 2.0.0
 """
 
-from typing import Optional, Callable, List
-from rich.text import Text
+from typing import Callable, List, Optional
+
 from rich.table import Table
-from textual.widget import Widget
-from textual.widgets import Static, Button, Label, ProgressBar
-from textual.containers import Container, Horizontal, Vertical
+from rich.text import Text
+from textual.containers import Container, Horizontal
 from textual.reactive import reactive
+from textual.widget import Widget
+from textual.widgets import Button, Label, Static
 
 
 class FileTransferProgress(Widget):
@@ -35,7 +36,7 @@ class FileTransferProgress(Widget):
         *,
         name: Optional[str] = None,
         id: Optional[str] = None,
-        classes: Optional[str] = None
+        classes: Optional[str] = None,
     ):
         """Initialize file transfer progress widget.
 
@@ -79,9 +80,10 @@ class FileTransferProgress(Widget):
 
     def render(self) -> Text:
         """Render the widget."""
+
         # Format file size
         def format_size(size: int) -> str:
-            for unit in ['B', 'KB', 'MB', 'GB']:
+            for unit in ["B", "KB", "MB", "GB"]:
                 if size < 1024:
                     return f"{size:.1f} {unit}"
                 size /= 1024
@@ -96,7 +98,7 @@ class FileTransferProgress(Widget):
             "in_progress": "▶",
             "complete": "✓",
             "error": "✗",
-            "cancelled": "⊗"
+            "cancelled": "⊗",
         }
         status_symbol = status_symbols.get(self.status, "?")
 
@@ -127,7 +129,7 @@ class ConnectionQualityIndicator(Static):
         *,
         name: Optional[str] = None,
         id: Optional[str] = None,
-        classes: Optional[str] = None
+        classes: Optional[str] = None,
     ):
         """Initialize connection quality indicator.
 
@@ -184,7 +186,7 @@ class ErrorDialog(Container):
         *,
         name: Optional[str] = None,
         id: Optional[str] = None,
-        classes: Optional[str] = None
+        classes: Optional[str] = None,
     ):
         """Initialize error dialog.
 
@@ -227,7 +229,7 @@ class ConfirmationDialog(Container):
         *,
         name: Optional[str] = None,
         id: Optional[str] = None,
-        classes: Optional[str] = None
+        classes: Optional[str] = None,
     ):
         """Initialize confirmation dialog.
 
@@ -278,7 +280,7 @@ class SearchResultsList(Static):
         *,
         name: Optional[str] = None,
         id: Optional[str] = None,
-        classes: Optional[str] = None
+        classes: Optional[str] = None,
     ):
         """Initialize search results list.
 
@@ -312,19 +314,20 @@ class SearchResultsList(Static):
             return table
 
         for result in self.results[:50]:  # Limit to 50 results
-            sender = result.get('sender', 'Unknown')
-            timestamp = result.get('timestamp', 0)
+            sender = result.get("sender", "Unknown")
+            timestamp = result.get("timestamp", 0)
 
             # Format timestamp
             from datetime import datetime
+
             try:
                 dt = datetime.fromtimestamp(timestamp)
-                date_str = dt.strftime('%Y-%m-%d %H:%M')
+                date_str = dt.strftime("%Y-%m-%d %H:%M")
             except:
-                date_str = 'Unknown'
+                date_str = "Unknown"
 
             # Get snippet or content
-            content = result.get('snippet', result.get('content', ''))
+            content = result.get("snippet", result.get("content", ""))
             if len(content) > 60:
                 content = content[:57] + "..."
 
@@ -345,7 +348,7 @@ class StatisticsChart(Static):
         *,
         name: Optional[str] = None,
         id: Optional[str] = None,
-        classes: Optional[str] = None
+        classes: Optional[str] = None,
     ):
         """Initialize statistics chart.
 
@@ -378,39 +381,39 @@ class StatisticsChart(Static):
             return table
 
         # Latency
-        latency = self.stats.get('latency', {})
-        avg_latency = latency.get('average_ms')
+        latency = self.stats.get("latency", {})
+        avg_latency = latency.get("average_ms")
         if avg_latency:
             table.add_row("Average Latency", f"{avg_latency:.2f} ms")
             table.add_row("Min Latency", f"{latency.get('min_ms', 0):.2f} ms")
             table.add_row("Max Latency", f"{latency.get('max_ms', 0):.2f} ms")
 
         # Throughput
-        throughput = self.stats.get('throughput', {})
-        avg_throughput = throughput.get('average_kbps')
+        throughput = self.stats.get("throughput", {})
+        avg_throughput = throughput.get("average_kbps")
         if avg_throughput:
             table.add_row("Average Throughput", f"{avg_throughput:.2f} KB/s")
 
         # Packets
-        packets = self.stats.get('packets', {})
+        packets = self.stats.get("packets", {})
         if packets:
-            table.add_row("Packets Sent", str(packets.get('sent', 0)))
-            table.add_row("Packets Received", str(packets.get('received', 0)))
+            table.add_row("Packets Sent", str(packets.get("sent", 0)))
+            table.add_row("Packets Received", str(packets.get("received", 0)))
             table.add_row("Packet Loss", f"{packets.get('loss_rate_percent', 0):.2f}%")
 
         # Bytes
-        bytes_stats = self.stats.get('bytes', {})
+        bytes_stats = self.stats.get("bytes", {})
         if bytes_stats:
-            total_mb = bytes_stats.get('total', 0) / (1024 * 1024)
+            total_mb = bytes_stats.get("total", 0) / (1024 * 1024)
             table.add_row("Total Data", f"{total_mb:.2f} MB")
 
         # Quality
-        quality = self.stats.get('quality', {})
+        quality = self.stats.get("quality", {})
         if quality:
-            table.add_row("Connection Quality", quality.get('bars', ''))
+            table.add_row("Connection Quality", quality.get("bars", ""))
 
         # Uptime
-        uptime = self.stats.get('uptime_seconds', 0)
+        uptime = self.stats.get("uptime_seconds", 0)
         if uptime:
             hours = int(uptime // 3600)
             minutes = int((uptime % 3600) // 60)

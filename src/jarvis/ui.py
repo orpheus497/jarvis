@@ -4,59 +4,48 @@ Jarvis - Textual-based terminal user interface.
 Created by orpheus497
 """
 
-import os
-import sys
-import asyncio
-import time
 import base64
 import json
-from typing import Optional, List, Dict
+import os
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, List, Optional
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
-from textual.widgets import (
-    Static, Label, Input, Button, Header, Footer, 
-    ListView, ListItem, RichLog, DataTable
-)
+from textual.containers import Container, Horizontal, ScrollableContainer, Vertical
 from textual.reactive import reactive
-from textual.screen import Screen, ModalScreen
-from textual import events
-from textual.message import Message
-from rich.text import Text
-from rich.console import RenderableType
-from rich.panel import Panel
-from rich.table import Table as RichTable
+from textual.screen import ModalScreen
+from textual.widgets import (
+    Button,
+    Footer,
+    Header,
+    Input,
+    Label,
+    ListItem,
+    ListView,
+    Static,
+)
 
 from . import crypto
-from .identity import IdentityManager, Identity
-from .contact import ContactManager, Contact
-from .message import MessageStore, Message as MessageModel
-from .group import GroupManager, Group, GroupMember
-from .network import NetworkManager, ConnectionState
-from .notification import get_notification_manager
-from .utils import (
-    format_timestamp, format_timestamp_relative, validate_port,
-    validate_ip, validate_hostname, format_fingerprint, truncate_string
-)
+from .contact import Contact, ContactManager
+from .group import Group, GroupManager
+from .identity import Identity, IdentityManager
+from .message import Message as MessageModel
+from .message import MessageStore
+from .network import ConnectionState
 
 # Import new UI components and screens
-from .ui_components import (
-    FileTransferProgress,
-    ConnectionQualityIndicator,
-    ErrorDialog,
-    ConfirmationDialog,
-    SearchResultsList,
-    StatisticsChart
-)
 from .ui_screens import (
+    BackupManagementScreen,
+    ConfigurationScreen,
     FileTransferScreen,
     SearchScreen,
     StatisticsScreen,
-    ConfigurationScreen,
-    BackupManagementScreen
+)
+from .utils import (
+    format_fingerprint,
+    format_timestamp_relative,
 )
 
 # ASCII Banner for Jarvis
@@ -94,22 +83,20 @@ class LinkCodeGenerator:
         Generate a link code containing UID, public key, host, and port.
         Format: jarvis://UID:PUBLIC_KEY_BASE64:HOST:PORT
         """
-        public_key_b64 = base64.b64encode(
-            identity.keypair.get_public_key_bytes()
-        ).decode('utf-8')
+        public_key_b64 = base64.b64encode(identity.keypair.get_public_key_bytes()).decode("utf-8")
 
         link_data = {
-            'uid': identity.uid,
-            'username': identity.username,
-            'public_key': public_key_b64,
-            'fingerprint': identity.fingerprint,
-            'host': host,
-            'port': identity.listen_port
+            "uid": identity.uid,
+            "username": identity.username,
+            "public_key": public_key_b64,
+            "fingerprint": identity.fingerprint,
+            "host": host,
+            "port": identity.listen_port,
         }
 
         # Encode as base64 for easy sharing
         json_str = json.dumps(link_data)
-        encoded = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
+        encoded = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
         return f"jarvis://{encoded}"
 
     @staticmethod
@@ -119,15 +106,15 @@ class LinkCodeGenerator:
         Returns None if invalid.
         """
         try:
-            if not link_code.startswith('jarvis://'):
+            if not link_code.startswith("jarvis://"):
                 return None
 
             encoded = link_code[9:]  # Remove 'jarvis://'
-            json_str = base64.b64decode(encoded).decode('utf-8')
+            json_str = base64.b64decode(encoded).decode("utf-8")
             data = json.loads(json_str)
 
             # Validate required fields
-            required = ['uid', 'username', 'public_key', 'fingerprint', 'host', 'port']
+            required = ["uid", "username", "public_key", "fingerprint", "host", "port"]
             if not all(field in data for field in required):
                 return None
 
@@ -147,25 +134,25 @@ class ContactCardManager:
         Returns True if successful.
         """
         try:
-            public_key_b64 = base64.b64encode(
-                identity.keypair.get_public_key_bytes()
-            ).decode('utf-8')
+            public_key_b64 = base64.b64encode(identity.keypair.get_public_key_bytes()).decode(
+                "utf-8"
+            )
 
             card_data = {
-                'version': '1.0',
-                'type': 'jarvis_contact_card',
-                'uid': identity.uid,
-                'username': identity.username,
-                'public_key': public_key_b64,
-                'fingerprint': identity.fingerprint,
-                'host': host,
-                'port': identity.listen_port,
-                'exported_at': datetime.now().isoformat()
+                "version": "1.0",
+                "type": "jarvis_contact_card",
+                "uid": identity.uid,
+                "username": identity.username,
+                "public_key": public_key_b64,
+                "fingerprint": identity.fingerprint,
+                "host": host,
+                "port": identity.listen_port,
+                "exported_at": datetime.now().isoformat(),
             }
 
-            with open(filepath, 'w') as f:
+            with open(filepath, "w") as f:
                 json.dump(card_data, f, indent=2)
-            
+
             return True
         except Exception:
             return False
@@ -177,15 +164,15 @@ class ContactCardManager:
         Returns contact data if valid, None otherwise.
         """
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath) as f:
                 card_data = json.load(f)
 
             # Validate card format
-            if card_data.get('type') != 'jarvis_contact_card':
+            if card_data.get("type") != "jarvis_contact_card":
                 return None
 
             # Validate required fields
-            required = ['uid', 'username', 'public_key', 'fingerprint', 'host', 'port']
+            required = ["uid", "username", "public_key", "fingerprint", "host", "port"]
             if not all(field in card_data for field in required):
                 return None
 
@@ -201,8 +188,7 @@ class LoadIdentityScreen(ModalScreen):
         Binding("escape", "cancel", "Cancel"),
     ]
 
-    def __init__(self, identity_manager: IdentityManager, data_dir: str,
-                 default_port: int = 5000):
+    def __init__(self, identity_manager: IdentityManager, data_dir: str, default_port: int = 5000):
         super().__init__()
         self.identity_manager = identity_manager
         self.data_dir = data_dir
@@ -224,22 +210,31 @@ class LoadIdentityScreen(ModalScreen):
                 yield Horizontal(
                     Button("Load Identity", variant="primary", id="load-btn"),
                     Button("Cancel", variant="default", id="cancel-btn"),
-                    id="button-row"
+                    id="button-row",
                 )
             else:
                 yield Label("Create a new identity:", id="prompt-label")
                 yield Label("Your identity will be encrypted with your password.", id="info-label")
                 yield Label("⚠️ Your password cannot be recovered if forgotten!", id="warning-label")
                 yield Input(placeholder="Username (visible to contacts)", id="username-input")
-                yield Input(placeholder="Password (strong password recommended)", password=True, id="password-input")
-                yield Input(placeholder="Listen Port (default: 5000)", value=str(self.default_port),
-                           id="port-input")
+                yield Input(
+                    placeholder="Password (strong password recommended)",
+                    password=True,
+                    id="password-input",
+                )
+                yield Input(
+                    placeholder="Listen Port (default: 5000)",
+                    value=str(self.default_port),
+                    id="port-input",
+                )
                 yield Label("The port is used for incoming P2P connections.", id="info-detail-1")
-                yield Label("You may need to configure port forwarding on your router.", id="info-detail-2")
+                yield Label(
+                    "You may need to configure port forwarding on your router.", id="info-detail-2"
+                )
                 yield Horizontal(
                     Button("Create Identity", variant="primary", id="create-btn"),
                     Button("Cancel", variant="default", id="cancel-btn"),
-                    id="button-row"
+                    id="button-row",
                 )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -307,14 +302,14 @@ class LoadIdentityScreen(ModalScreen):
                 # Submit the form
                 username_input = self.query_one("#username-input", Input)
                 password_input = self.query_one("#password-input", Input)
-                
+
                 username = username_input.value
                 password = password_input.value
                 try:
                     port = int(event.input.value)
                 except ValueError:
                     port = self.default_port
-                
+
                 if username and password:
                     identity = self.identity_manager.create_identity(username, password, port)
                     self.identity = identity
@@ -357,13 +352,14 @@ class AddContactScreen(ModalScreen):
             yield Horizontal(
                 Button("Add Contact", variant="primary", id="add-btn"),
                 Button("Cancel", variant="default", id="cancel-btn"),
-                id="button-row"
+                id="button-row",
             )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press."""
         if event.button.id == "paste-btn":
             import pyperclip
+
             try:
                 clipboard_text = pyperclip.paste()
                 link_code_input = self.query_one("#link-code-input", Input)
@@ -381,12 +377,12 @@ class AddContactScreen(ModalScreen):
                 data = LinkCodeGenerator.parse_link_code(link_code)
                 if data:
                     contact = Contact(
-                        uid=data['uid'],
-                        username=data['username'],
-                        public_key=data['public_key'],
-                        host=data['host'],
-                        port=data['port'],
-                        fingerprint=data['fingerprint']
+                        uid=data["uid"],
+                        username=data["username"],
+                        public_key=data["public_key"],
+                        host=data["host"],
+                        port=data["port"],
+                        fingerprint=data["fingerprint"],
                     )
                     if self.contact_manager.add_contact(contact):
                         self.dismiss(contact)
@@ -407,15 +403,13 @@ class AddContactScreen(ModalScreen):
                 try:
                     port = int(port_str)
                     # Verify and create contact
-                    fingerprint = crypto.generate_fingerprint(
-                        base64.b64decode(public_key)
-                    )
+                    fingerprint = crypto.generate_fingerprint(base64.b64decode(public_key))
                     contact = Contact(uid, username, public_key, host, port, fingerprint)
                     if self.contact_manager.add_contact(contact):
                         self.dismiss(contact)
                     else:
                         self.query_one("#username-input").placeholder = "Contact exists!"
-                except Exception as e:
+                except Exception:
                     self.query_one("#username-input").placeholder = "Invalid data!"
 
         elif event.button.id == "cancel-btn":
@@ -432,12 +426,12 @@ class AddContactScreen(ModalScreen):
             data = LinkCodeGenerator.parse_link_code(link_code)
             if data:
                 contact = Contact(
-                    uid=data['uid'],
-                    username=data['username'],
-                    public_key=data['public_key'],
-                    host=data['host'],
-                    port=data['port'],
-                    fingerprint=data['fingerprint']
+                    uid=data["uid"],
+                    username=data["username"],
+                    public_key=data["public_key"],
+                    host=data["host"],
+                    port=data["port"],
+                    fingerprint=data["fingerprint"],
                 )
                 if self.contact_manager.add_contact(contact):
                     self.dismiss(contact)
@@ -458,15 +452,13 @@ class AddContactScreen(ModalScreen):
             try:
                 port = int(port_str)
                 # Verify and create contact
-                fingerprint = crypto.generate_fingerprint(
-                    base64.b64decode(public_key)
-                )
+                fingerprint = crypto.generate_fingerprint(base64.b64decode(public_key))
                 contact = Contact(uid, username, public_key, host, port, fingerprint)
                 if self.contact_manager.add_contact(contact):
                     self.dismiss(contact)
                 else:
                     self.query_one("#username-input").placeholder = "Contact exists!"
-            except Exception as e:
+            except Exception:
                 self.query_one("#username-input").placeholder = "Invalid data!"
 
     def action_cancel(self) -> None:
@@ -481,8 +473,9 @@ class CreateGroupScreen(ModalScreen):
         Binding("escape", "cancel", "Cancel"),
     ]
 
-    def __init__(self, group_manager: GroupManager, contact_manager: ContactManager,
-                 identity: Identity):
+    def __init__(
+        self, group_manager: GroupManager, contact_manager: ContactManager, identity: Identity
+    ):
         super().__init__()
         self.group_manager = group_manager
         self.contact_manager = contact_manager
@@ -499,7 +492,7 @@ class CreateGroupScreen(ModalScreen):
             yield Horizontal(
                 Button("Create Group", variant="primary", id="create-btn"),
                 Button("Cancel", variant="default", id="cancel-btn"),
-                id="button-row"
+                id="button-row",
             )
 
     def on_mount(self) -> None:
@@ -523,8 +516,8 @@ class CreateGroupScreen(ModalScreen):
                     name,
                     self.identity.uid,
                     self.identity.username,
-                    base64.b64encode(self.identity.keypair.get_public_key_bytes()).decode('utf-8'),
-                    self.identity.fingerprint
+                    base64.b64encode(self.identity.keypair.get_public_key_bytes()).decode("utf-8"),
+                    self.identity.fingerprint,
                 )
                 group.description = description
                 self.group_manager.save_groups()
@@ -563,7 +556,7 @@ class LockScreen(ModalScreen):
             yield Horizontal(
                 Button("Unlock", variant="primary", id="unlock-btn"),
                 Button("Cancel", variant="default", id="cancel-btn"),
-                id="button-row"
+                id="button-row",
             )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -627,7 +620,7 @@ class DeleteAccountScreen(ModalScreen):
             yield Horizontal(
                 Button("Delete Account", variant="error", id="delete-btn"),
                 Button("Cancel", variant="default", id="cancel-btn"),
-                id="button-row"
+                id="button-row",
             )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -676,12 +669,13 @@ class SettingsScreen(ModalScreen):
         with Container(id="settings-dialog"):
             yield Label("Settings", id="dialog-title")
             yield Label(f"Username: {self.identity.username}", id="username-label")
-            yield Label(f"UID:", id="uid-label")
+            yield Label("UID:", id="uid-label")
             yield Input(value=self.identity.uid, id="uid-display", disabled=True)
             yield Button("Copy UID", variant="default", id="copy-uid-btn")
-            yield Label(f"Fingerprint:", id="fp-label")
-            yield Input(value=format_fingerprint(self.identity.fingerprint), 
-                       id="fp-display", disabled=True)
+            yield Label("Fingerprint:", id="fp-label")
+            yield Input(
+                value=format_fingerprint(self.identity.fingerprint), id="fp-display", disabled=True
+            )
             yield Button("Copy Fingerprint", variant="default", id="copy-fp-btn")
             yield Label(f"Listen Port: {self.identity.listen_port}", id="port-label")
             yield Label("", id="spacer")
@@ -690,17 +684,14 @@ class SettingsScreen(ModalScreen):
             yield Horizontal(
                 Button("Copy Link Code", variant="primary", id="copy-btn"),
                 Button("Export Contact Card", variant="default", id="export-card-btn"),
-                id="button-row-1"
+                id="button-row-1",
             )
             yield Horizontal(
                 Button("Export Account", variant="default", id="export-account-btn"),
                 Button("Delete Account", variant="error", id="delete-account-btn"),
-                id="button-row-2"
+                id="button-row-2",
             )
-            yield Horizontal(
-                Button("Close", variant="default", id="close-btn"),
-                id="button-row-3"
-            )
+            yield Horizontal(Button("Close", variant="default", id="close-btn"), id="button-row-3")
 
     def on_mount(self) -> None:
         """Generate link code on mount."""
@@ -711,14 +702,12 @@ class SettingsScreen(ModalScreen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press."""
         import pyperclip
-        
+
         if event.button.id == "copy-btn":
             link_code_input = self.query_one("#link-code-display", Input)
             try:
                 pyperclip.copy(link_code_input.value)
-                self.query_one("#link-label").update(
-                    "Link Code (copied to clipboard!):"
-                )
+                self.query_one("#link-label").update("Link Code (copied to clipboard!):")
             except Exception:
                 pass
         elif event.button.id == "export-card-btn":
@@ -754,8 +743,9 @@ class ContactDetailsScreen(ModalScreen):
         Binding("escape", "cancel", "Cancel"),
     ]
 
-    def __init__(self, contact: Contact, contact_manager: ContactManager, 
-                 message_store: MessageStore):
+    def __init__(
+        self, contact: Contact, contact_manager: ContactManager, message_store: MessageStore
+    ):
         super().__init__()
         self.contact = contact
         self.contact_manager = contact_manager
@@ -766,31 +756,33 @@ class ContactDetailsScreen(ModalScreen):
         with Container(id="contact-details-dialog"):
             yield Label("Contact Details", id="dialog-title")
             yield Label(f"Username: {self.contact.username}", id="contact-username")
-            yield Label(f"UID:", id="uid-label")
+            yield Label("UID:", id="uid-label")
             yield Input(value=self.contact.uid, id="uid-display", disabled=True)
-            yield Label(f"Fingerprint:", id="fp-label")
-            yield Input(value=format_fingerprint(self.contact.fingerprint), 
-                       id="fp-display", disabled=True)
+            yield Label("Fingerprint:", id="fp-label")
+            yield Input(
+                value=format_fingerprint(self.contact.fingerprint), id="fp-display", disabled=True
+            )
             yield Label(f"Host: {self.contact.host}:{self.contact.port}", id="host-label")
             yield Label(f"Status: {self.contact.status}", id="status-label")
-            yield Label(f"Verified: {'Yes' if self.contact.verified else 'No'}", 
-                       id="verified-label")
+            yield Label(
+                f"Verified: {'Yes' if self.contact.verified else 'No'}", id="verified-label"
+            )
             yield Label("", id="spacer")
             yield Horizontal(
                 Button("Copy UID", variant="primary", id="copy-uid-btn"),
                 Button("Copy Fingerprint", variant="primary", id="copy-fp-btn"),
-                id="button-row-1"
+                id="button-row-1",
             )
             yield Horizontal(
                 Button("Delete Contact", variant="error", id="delete-contact-btn"),
                 Button("Close", variant="default", id="close-btn"),
-                id="button-row-2"
+                id="button-row-2",
             )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press."""
         import pyperclip
-        
+
         if event.button.id == "copy-uid-btn":
             try:
                 pyperclip.copy(self.contact.uid)
@@ -820,8 +812,7 @@ class GroupDetailsScreen(ModalScreen):
         Binding("escape", "cancel", "Cancel"),
     ]
 
-    def __init__(self, group: Group, group_manager: GroupManager, 
-                 message_store: MessageStore):
+    def __init__(self, group: Group, group_manager: GroupManager, message_store: MessageStore):
         super().__init__()
         self.group = group
         self.group_manager = group_manager
@@ -832,10 +823,9 @@ class GroupDetailsScreen(ModalScreen):
         with Container(id="group-details-dialog"):
             yield Label("Group Details", id="dialog-title")
             yield Label(f"Name: {self.group.name}", id="group-name")
-            yield Label(f"Group ID:", id="gid-label")
+            yield Label("Group ID:", id="gid-label")
             yield Input(value=self.group.group_id, id="gid-display", disabled=True)
-            yield Label(f"Description: {self.group.description or 'None'}", 
-                       id="desc-label")
+            yield Label(f"Description: {self.group.description or 'None'}", id="desc-label")
             yield Label(f"Members: {len(self.group.members)}", id="members-label")
             yield Label(f"Created: {self.group.created_at[:10]}", id="created-label")
             yield Label("", id="spacer")
@@ -843,13 +833,13 @@ class GroupDetailsScreen(ModalScreen):
                 Button("Copy Group ID", variant="primary", id="copy-gid-btn"),
                 Button("Delete Group", variant="error", id="delete-group-btn"),
                 Button("Close", variant="default", id="close-btn"),
-                id="button-row"
+                id="button-row",
             )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press."""
         import pyperclip
-        
+
         if event.button.id == "copy-gid-btn":
             try:
                 pyperclip.copy(self.group.group_id)
@@ -890,8 +880,9 @@ class ChatView(ScrollableContainer):
         super().__init__()
         self.messages: List[MessageModel] = []
 
-    def display_messages(self, messages: List[MessageModel],
-                        my_uid: str, contact_manager: ContactManager) -> None:
+    def display_messages(
+        self, messages: List[MessageModel], my_uid: str, contact_manager: ContactManager
+    ) -> None:
         """Display messages in the chat view."""
         self.remove_children()
         self.messages = messages
@@ -920,8 +911,7 @@ class ChatView(ScrollableContainer):
 
             self.mount(Label(text))
 
-    def add_message(self, msg: MessageModel, my_uid: str,
-                   contact_manager: ContactManager) -> None:
+    def add_message(self, msg: MessageModel, my_uid: str, contact_manager: ContactManager) -> None:
         """Add a single message to the view."""
         self.messages.append(msg)
 
@@ -955,7 +945,7 @@ class JarvisApp(App):
         background: #000000;
     }
 
-    #identity-dialog, #add-contact-dialog, #create-group-dialog, #settings-dialog, 
+    #identity-dialog, #add-contact-dialog, #create-group-dialog, #settings-dialog,
     #lock-dialog, #delete-account-dialog, #contact-details-dialog, #group-details-dialog,
     #sessions-dialog {
         align: center middle;
@@ -972,19 +962,19 @@ class JarvisApp(App):
         color: #ff4444;
         margin-bottom: 1;
     }
-    
+
     #warning-label {
         text-align: center;
         text-style: bold;
         color: #ff0000;
         margin-bottom: 1;
     }
-    
+
     #lock-prompt, #confirm-label, #info-label {
         color: #cccccc;
         margin-bottom: 1;
     }
-    
+
     #info-detail-1, #info-detail-2, #info-detail-3, #info-detail-4 {
         color: #888888;
         margin-left: 2;
@@ -1173,7 +1163,9 @@ class JarvisApp(App):
         Binding("ctrl+q", "quit", "Quit"),
     ]
 
-    def __init__(self, data_dir: str, default_port: int = 5000, ipc_port: int = 5999, debug: bool = False):
+    def __init__(
+        self, data_dir: str, default_port: int = 5000, ipc_port: int = 5999, debug: bool = False
+    ):
         super().__init__()
         self.data_dir = data_dir
         self.default_port = default_port
@@ -1182,26 +1174,29 @@ class JarvisApp(App):
         self.identity: Optional[Identity] = None
         self.password: Optional[str] = None
 
-        # Initialize managers  
-        self.identity_manager = IdentityManager(os.path.join(data_dir, 'identity.enc'))
-        
+        # Initialize managers
+        self.identity_manager = IdentityManager(os.path.join(data_dir, "identity.enc"))
+
         # Import client adapter
-        from .client_adapter import ClientAdapter, ServerManagedContactManager, ServerManagedGroupManager
         from .client import JarvisClient
-        
+        from .client_adapter import (
+            ClientAdapter,
+        )
+
         # Initialize client and adapter
         self.client = JarvisClient(port=ipc_port)
         self.client_adapter = ClientAdapter(ipc_port)
-        
+
         # Use server-managed managers (will be initialized after connection)
         self.contact_manager = None
         self.group_manager = None
-        self.message_store = MessageStore(os.path.join(data_dir, 'messages.json'))
+        self.message_store = MessageStore(os.path.join(data_dir, "messages.json"))
         self.network_manager = None
-        
+
         # Import SessionManager
         from .session import SessionManager
-        self.session_manager = SessionManager(os.path.join(data_dir, 'sessions.json'))
+
+        self.session_manager = SessionManager(os.path.join(data_dir, "sessions.json"))
 
         self.current_contact: Optional[Contact] = None
         self.current_group: Optional[Group] = None
@@ -1232,33 +1227,34 @@ class JarvisApp(App):
         # Try to connect to server (may already be running)
         try:
             connected = await self.client_adapter.connect_to_server_async()
-            
+
             if not connected:
                 # Server not running, try to start it
                 self.notify("Server not running, starting...", severity="information")
-                
+
                 from .daemon_manager import DaemonManager
+
                 daemon_manager = DaemonManager(Path(self.data_dir), self.ipc_port)
-                
+
                 if not daemon_manager.start_daemon(timeout=10):
                     self.notify("Failed to start server daemon", severity="error")
                     self.notify("Check logs and try running: jarvis-server", severity="error")
                     self.exit()
                     return
-                
+
                 # Server started, try connecting again
                 if not await self.client_adapter.connect_to_server_async():
                     self.notify("Started server but failed to connect", severity="error")
                     self.exit()
                     return
-                
+
                 self.notify("Server started successfully", severity="information")
-        
+
         except Exception as e:
             self.notify(f"Server connection error: {e}", severity="error")
             self.exit()
             return
-        
+
         # Load or create identity
         result = await self.push_screen_wait(
             LoadIdentityScreen(self.identity_manager, self.data_dir, self.default_port)
@@ -1270,7 +1266,7 @@ class JarvisApp(App):
             return
 
         self.identity, self.password = result
-        
+
         # Create session
         self.session_manager.create_session(self.identity.uid)
 
@@ -1281,9 +1277,10 @@ class JarvisApp(App):
             await self.client_adapter.disconnect_from_server_async()
             self.exit()
             return
-        
+
         # Initialize server-managed managers
         from .client_adapter import ServerManagedContactManager, ServerManagedGroupManager
+
         self.contact_manager = ServerManagedContactManager(self.client)
         self.group_manager = ServerManagedGroupManager(self.client)
 
@@ -1299,7 +1296,7 @@ class JarvisApp(App):
 
         # Server automatically connects to contacts
         self.notify("Server connecting to contacts...", severity="information")
-        
+
         # Update connection status
         self._update_connection_status()
 
@@ -1313,13 +1310,16 @@ class JarvisApp(App):
         """Update connection status display."""
         if not self.network_manager:
             return
-        
+
         try:
             status_label = self.query_one("#connection-status", Label)
             total_contacts = len(self.contact_manager.get_all_contacts())
-            connected = sum(1 for c in self.contact_manager.get_all_contacts() 
-                          if self.network_manager.is_connected(c.uid))
-            
+            connected = sum(
+                1
+                for c in self.contact_manager.get_all_contacts()
+                if self.network_manager.is_connected(c.uid)
+            )
+
             if total_contacts == 0:
                 status_label.update("Status: No contacts")
             elif connected == total_contacts:
@@ -1331,8 +1331,9 @@ class JarvisApp(App):
         except Exception:
             pass  # Status label may not be ready yet
 
-    def _handle_incoming_message(self, sender_uid: str, content: str,
-                                 message_id: str, timestamp: str) -> None:
+    def _handle_incoming_message(
+        self, sender_uid: str, content: str, message_id: str, timestamp: str
+    ) -> None:
         """Handle incoming direct message."""
         contact = self.contact_manager.get_contact(sender_uid)
         if not contact:
@@ -1344,7 +1345,7 @@ class JarvisApp(App):
             content=content,
             sent_by_me=False,
             timestamp=timestamp,
-            message_id=message_id
+            message_id=message_id,
         )
         self.message_store.add_message(msg)
 
@@ -1356,8 +1357,9 @@ class JarvisApp(App):
         # Show notification
         self.notify(f"New message from {contact.username}", severity="information")
 
-    def _handle_incoming_group_message(self, group_id: str, sender_uid: str,
-                                      content: str, message_id: str, timestamp: str) -> None:
+    def _handle_incoming_group_message(
+        self, group_id: str, sender_uid: str, content: str, message_id: str, timestamp: str
+    ) -> None:
         """Handle incoming group message."""
         group = self.group_manager.get_group(group_id)
         if not group:
@@ -1371,7 +1373,7 @@ class JarvisApp(App):
             timestamp=timestamp,
             message_id=message_id,
             group_id=group_id,
-            sender_uid=sender_uid
+            sender_uid=sender_uid,
         )
         self.message_store.add_message(msg)
 
@@ -1383,8 +1385,7 @@ class JarvisApp(App):
         # Show notification
         sender = self.contact_manager.get_contact(sender_uid)
         sender_name = sender.username if sender else "Unknown"
-        self.notify(f"New message in {group.name} from {sender_name}",
-                   severity="information")
+        self.notify(f"New message in {group.name} from {sender_name}", severity="information")
 
     def _handle_connection_state_change(self, uid: str, state: ConnectionState) -> None:
         """Handle connection state change."""
@@ -1399,7 +1400,7 @@ class JarvisApp(App):
             # Refresh contact list
             contact_list = self.query_one(ContactList)
             contact_list.refresh_contacts()
-            
+
             # Update connection status
             self._update_connection_status()
 
@@ -1419,9 +1420,7 @@ class JarvisApp(App):
                 chat_view.display_messages(messages, self.identity.uid, self.contact_manager)
 
                 # Update header
-                self.query_one("#chat-header", Label).update(
-                    f"Chat with {contact.username}"
-                )
+                self.query_one("#chat-header", Label).update(f"Chat with {contact.username}")
 
                 # Mark as read
                 self.message_store.mark_as_read(contact.uid)
@@ -1430,7 +1429,7 @@ class JarvisApp(App):
                 if self.network_manager and not self.network_manager.is_connected(contact.uid):
                     self.run_worker(self._connect_to_contact(contact))
         except Exception as e:
-            self.notify(f"Error loading contact: {str(e)}", severity="error")
+            self.notify(f"Error loading contact: {e!s}", severity="error")
 
     async def _connect_to_contact(self, contact: Contact) -> None:
         """Connect to a contact in the background."""
@@ -1476,7 +1475,7 @@ class JarvisApp(App):
                         content=content,
                         sent_by_me=True,
                         timestamp=timestamp,
-                        message_id=message_id
+                        message_id=message_id,
                     )
                     self.message_store.add_message(msg)
 
@@ -1496,7 +1495,7 @@ class JarvisApp(App):
                 sent_count = self.network_manager.send_group_message(
                     self.current_group.group_id, content, message_id, timestamp
                 )
-                
+
                 if sent_count > 0:
                     # Store message
                     msg = MessageModel(
@@ -1506,7 +1505,7 @@ class JarvisApp(App):
                         timestamp=timestamp,
                         message_id=message_id,
                         group_id=self.current_group.group_id,
-                        sender_uid=self.identity.uid
+                        sender_uid=self.identity.uid,
                     )
                     self.message_store.add_message(msg)
 
@@ -1517,9 +1516,11 @@ class JarvisApp(App):
                     message_input.value = ""
                     self.notify(f"Message sent to {sent_count} member(s)", severity="information")
                 else:
-                    self.notify("Failed to send group message - No members online", severity="error")
+                    self.notify(
+                        "Failed to send group message - No members online", severity="error"
+                    )
         except Exception as e:
-            self.notify(f"Error sending message: {str(e)}", severity="error")
+            self.notify(f"Error sending message: {e!s}", severity="error")
 
     def action_add_contact(self) -> None:
         """Show add contact screen."""
@@ -1528,36 +1529,38 @@ class JarvisApp(App):
     async def _show_add_contact(self) -> None:
         """Worker to show add contact screen."""
         result = await self.push_screen_wait(AddContactScreen(self.contact_manager))
-        
+
         if result == "import_card":
             # Import contact card from file
             try:
-                cards_dir = os.path.join(self.data_dir, 'contact_cards')
+                cards_dir = os.path.join(self.data_dir, "contact_cards")
                 os.makedirs(cards_dir, exist_ok=True)
-                
+
                 # List available .jcard files
-                card_files = [f for f in os.listdir(cards_dir) if f.endswith('.jcard')]
-                
+                card_files = [f for f in os.listdir(cards_dir) if f.endswith(".jcard")]
+
                 if not card_files:
-                    self.notify("No contact card files found in contact_cards directory", severity="warning")
+                    self.notify(
+                        "No contact card files found in contact_cards directory", severity="warning"
+                    )
                     return
-                
+
                 # For now, import the first card file found
                 # In a full implementation, you'd show a file picker
                 filepath = os.path.join(cards_dir, card_files[0])
                 card_data = ContactCardManager.import_contact_card(filepath)
-                
+
                 if card_data:
                     contact = Contact(
-                        uid=card_data['uid'],
-                        username=card_data['username'],
-                        public_key=card_data['public_key'],
-                        host=card_data['host'],
-                        port=card_data['port'],
-                        fingerprint=card_data['fingerprint'],
-                        verified=card_data.get('verified', False)
+                        uid=card_data["uid"],
+                        username=card_data["username"],
+                        public_key=card_data["public_key"],
+                        host=card_data["host"],
+                        port=card_data["port"],
+                        fingerprint=card_data["fingerprint"],
+                        verified=card_data.get("verified", False),
                     )
-                    
+
                     if self.contact_manager.add_contact(contact):
                         contact_list = self.query_one(ContactList)
                         contact_list.refresh_contacts()
@@ -1567,16 +1570,18 @@ class JarvisApp(App):
                 else:
                     self.notify("Invalid contact card file", severity="error")
             except Exception as e:
-                self.notify(f"Error importing contact card: {str(e)}", severity="error")
-        
+                self.notify(f"Error importing contact card: {e!s}", severity="error")
+
         elif result:
             contact_list = self.query_one(ContactList)
             contact_list.refresh_contacts()
             self.notify(f"Added contact: {result.username}", severity="information")
-            
+
             # Automatically try to connect to the new contact
             if self.network_manager:
-                self.notify(f"Attempting to connect to {result.username}...", severity="information")
+                self.notify(
+                    f"Attempting to connect to {result.username}...", severity="information"
+                )
                 self.run_worker(self._connect_to_contact(result))
                 self._update_connection_status()
 
@@ -1601,142 +1606,143 @@ class JarvisApp(App):
     async def _show_settings(self) -> None:
         """Worker to show settings screen."""
         result = await self.push_screen_wait(SettingsScreen(self.identity))
-        
+
         if result == "export_card":
             # Export contact card
             try:
                 # Use data directory for contact cards
-                cards_dir = os.path.join(self.data_dir, 'contact_cards')
+                cards_dir = os.path.join(self.data_dir, "contact_cards")
                 os.makedirs(cards_dir, exist_ok=True)
-                
+
                 filename = f"{self.identity.username}_{self.identity.uid[:8]}.jcard"
                 filepath = os.path.join(cards_dir, filename)
-                
+
                 if ContactCardManager.export_contact_card(self.identity, "localhost", filepath):
                     self.notify(f"Contact card exported to: {filepath}", severity="information")
                 else:
                     self.notify("Failed to export contact card", severity="error")
             except Exception as e:
-                self.notify(f"Error exporting contact card: {str(e)}", severity="error")
-        
+                self.notify(f"Error exporting contact card: {e!s}", severity="error")
+
         elif result == "export_account":
             # Export complete account
             try:
-                export_dir = os.path.join(self.data_dir, 'account_exports')
+                export_dir = os.path.join(self.data_dir, "account_exports")
                 os.makedirs(export_dir, exist_ok=True)
-                
+
                 filename = f"{self.identity.username}_account_{self.identity.uid[:8]}.jexport"
                 filepath = os.path.join(export_dir, filename)
-                
+
                 if self.identity_manager.export_complete_account(
-                    self.password, filepath,
-                    self.contact_manager, self.message_store, self.group_manager
+                    self.password,
+                    filepath,
+                    self.contact_manager,
+                    self.message_store,
+                    self.group_manager,
                 ):
                     self.notify(f"Account exported to: {filepath}", severity="information")
                 else:
                     self.notify("Failed to export account", severity="error")
             except Exception as e:
-                self.notify(f"Error exporting account: {str(e)}", severity="error")
-        
+                self.notify(f"Error exporting account: {e!s}", severity="error")
+
         elif result == "delete_account":
             # Show delete account confirmation
             delete_result = await self.push_screen_wait(
                 DeleteAccountScreen(self.identity, self.password)
             )
-            
+
             if delete_result:
                 # Delete account via server
                 if self.client:
                     await self.client.delete_account(self.password)
-                
+
                 # Disconnect from server
                 if self.client_adapter:
                     await self.client_adapter.logout_async()
                     await self.client_adapter.disconnect_from_server_async()
-                
+
                 self.notify("Account deleted successfully.", severity="warning")
                 self.exit()
-    
+
     def action_lock_app(self) -> None:
         """Lock the application."""
         self.run_worker(self._lock_app())
-    
+
     async def _lock_app(self) -> None:
         """Worker to lock the application."""
         result = await self.push_screen_wait(LockScreen(self.password))
-        
+
         if result:
             self.notify("Application unlocked", severity="information")
         else:
             # User cancelled - could optionally do something here
             pass
-    
+
     def action_contact_info(self) -> None:
         """Show info for current contact or group."""
         self.run_worker(self._show_contact_info())
-    
+
     async def _show_contact_info(self) -> None:
         """Worker to show contact or group info."""
         if self.current_contact:
             result = await self.push_screen_wait(
-                ContactDetailsScreen(self.current_contact, self.contact_manager, 
-                                   self.message_store)
+                ContactDetailsScreen(self.current_contact, self.contact_manager, self.message_store)
             )
-            
+
             if result == "delete":
                 # Confirm and delete contact
                 if self.contact_manager.remove_contact(self.current_contact.uid):
                     # Delete conversation
                     self.message_store.delete_conversation(self.current_contact.uid)
-                    
+
                     # Disconnect if connected
                     if self.network_manager:
                         self.network_manager.disconnect_from_peer(self.current_contact.uid)
-                    
+
                     # Clear current selection
                     self.current_contact = None
-                    
+
                     # Refresh UI
                     contact_list = self.query_one(ContactList)
                     contact_list.refresh_contacts()
-                    
+
                     self.query_one("#chat-header", Label).update(
                         "Select a contact or group to start chatting"
                     )
                     chat_view = self.query_one(ChatView)
                     chat_view.display_messages([], self.identity.uid, self.contact_manager)
-                    
+
                     self.notify("Contact deleted successfully", severity="information")
-        
+
         elif self.current_group:
             result = await self.push_screen_wait(
-                GroupDetailsScreen(self.current_group, self.group_manager, 
-                                 self.message_store)
+                GroupDetailsScreen(self.current_group, self.group_manager, self.message_store)
             )
-            
+
             if result == "delete":
                 # Confirm and delete group
                 if self.group_manager.delete_group(self.current_group.group_id):
                     # Delete conversation
                     self.message_store.delete_group_conversation(self.current_group.group_id)
-                    
+
                     # Clear current selection
                     self.current_group = None
-                    
+
                     # Refresh UI
                     contact_list = self.query_one(ContactList)
                     contact_list.refresh_contacts()
-                    
+
                     self.query_one("#chat-header", Label).update(
                         "Select a contact or group to start chatting"
                     )
                     chat_view = self.query_one(ChatView)
                     chat_view.display_messages([], self.identity.uid, self.contact_manager)
-                    
+
                     self.notify("Group deleted successfully", severity="information")
         else:
             self.notify("No contact or group selected", severity="warning")
-    
+
     def action_delete_current(self) -> None:
         """Delete current contact or group."""
         # Just call the contact info action which has delete option
@@ -1748,43 +1754,30 @@ class JarvisApp(App):
 
     async def _show_search(self) -> None:
         """Worker to show search screen."""
-        def search_callback(query: str, contact_uid: str = None,
-                          group_id: str = None) -> List[Dict]:
-            """Search messages and return results."""
-            messages = self.message_store.search_messages(
-                query=query,
-                contact_uid=contact_uid,
-                group_id=group_id,
-                limit=50
-            )
 
-            # Convert Message objects to dict format for display
-            results = []
-            for msg in messages:
-                # Get sender name
-                if msg.sent_by_me:
-                    sender = "You"
-                elif msg.is_group_message() and msg.sender_uid:
-                    contact = self.contact_manager.get_contact(msg.sender_uid)
-                    sender = contact.username if contact else "Unknown"
+        def search_callback(
+            query: str, contact_uid: Optional[str] = None, group_id: Optional[str] = None
+        ) -> List[Dict]:
+            """Search messages and return results using the search engine."""
+            # Use client adapter to search messages through the server's search engine
+            response = self.client_adapter.search_messages(query=query, limit=50)
+
+            if not response or not response.get("success"):
+                return []
+
+            # Results are already in dict format from the search engine
+            results = response.get("results", [])
+
+            # Enhance results with sender names for display
+            for result in results:
+                sender_uid = result.get("sender")
+                if sender_uid == self.identity.uid:
+                    result["sender_name"] = "You"
+                elif sender_uid and self.contact_manager:
+                    contact = self.contact_manager.get_contact(sender_uid)
+                    result["sender_name"] = contact.username if contact else "Unknown"
                 else:
-                    contact = self.contact_manager.get_contact(msg.contact_uid)
-                    sender = contact.username if contact else "Unknown"
-
-                # Parse timestamp
-                try:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(msg.timestamp.replace('Z', '+00:00'))
-                    timestamp = int(dt.timestamp())
-                except:
-                    timestamp = 0
-
-                results.append({
-                    'sender': sender,
-                    'timestamp': timestamp,
-                    'content': msg.content,
-                    'snippet': msg.content  # Could add highlighting here
-                })
+                    result["sender_name"] = "Unknown"
 
             return results
 
@@ -1797,33 +1790,28 @@ class JarvisApp(App):
 
     async def _show_statistics(self) -> None:
         """Worker to show statistics screen."""
+
         def stats_callback():
             """Get current statistics."""
             # Gather overall statistics
             overall_stats = {
-                'packets': {
-                    'sent': 0,
-                    'received': 0,
-                    'loss_rate_percent': 0.0
-                },
-                'bytes': {
-                    'total': 0
-                },
-                'uptime_seconds': 0
+                "packets": {"sent": 0, "received": 0, "loss_rate_percent": 0.0},
+                "bytes": {"total": 0},
+                "uptime_seconds": 0,
             }
 
             # Gather per-contact statistics
             contact_stats = {}
             for contact in self.contact_manager.get_all_contacts():
-                if self.network_manager and hasattr(self.network_manager, 'get_connection_metrics'):
+                if self.network_manager and hasattr(self.network_manager, "get_connection_metrics"):
                     metrics = self.network_manager.get_connection_metrics(contact.uid)
                     if metrics:
                         contact_stats[contact.username] = metrics
                 else:
                     # Placeholder stats
                     contact_stats[contact.username] = {
-                        'latency': {'average_ms': 0},
-                        'packets': {'sent': 0, 'received': 0},
+                        "latency": {"average_ms": 0},
+                        "packets": {"sent": 0, "received": 0},
                     }
 
             return overall_stats, contact_stats
@@ -1837,13 +1825,13 @@ class JarvisApp(App):
 
     async def _show_backup_management(self) -> None:
         """Worker to show backup management screen."""
+
         def backup_callback(password: Optional[str] = None):
             """Create a new backup."""
             if self.client_adapter:
                 result = self.client_adapter.create_backup(password=password)
-                if result.get('success'):
-                    self.notify(f"Backup created: {result['backup_path']}",
-                              severity="information")
+                if result.get("success"):
+                    self.notify(f"Backup created: {result['backup_path']}", severity="information")
                     return result
                 else:
                     self.notify("Failed to create backup", severity="error")
@@ -1853,10 +1841,9 @@ class JarvisApp(App):
             """Restore from a backup."""
             if self.client_adapter:
                 result = self.client_adapter.restore_backup(
-                    backup_path=backup_path,
-                    password=password
+                    backup_path=backup_path, password=password
                 )
-                if result.get('success'):
+                if result.get("success"):
                     self.notify("Backup restored successfully", severity="information")
                     return result
                 else:
@@ -1864,15 +1851,14 @@ class JarvisApp(App):
             return None
 
         backup_screen = BackupManagementScreen(
-            backup_callback=backup_callback,
-            restore_callback=restore_callback
+            backup_callback=backup_callback, restore_callback=restore_callback
         )
 
         # Update backup list if available
-        if self.client_adapter and hasattr(self.client_adapter, 'list_backups'):
+        if self.client_adapter and hasattr(self.client_adapter, "list_backups"):
             backups = self.client_adapter.list_backups()
-            if backups.get('success'):
-                backup_screen.update_backup_list(backups.get('backups', []))
+            if backups.get("success"):
+                backup_screen.update_backup_list(backups.get("backups", []))
 
         await self.push_screen_wait(backup_screen)
 
@@ -1882,26 +1868,24 @@ class JarvisApp(App):
 
     async def _show_configuration(self) -> None:
         """Worker to show configuration screen."""
+
         def save_callback(config: Dict):
             """Save configuration changes."""
-            if self.client_adapter and hasattr(self.client_adapter, 'update_config'):
+            if self.client_adapter and hasattr(self.client_adapter, "update_config"):
                 result = self.client_adapter.update_config(config)
-                if result.get('success'):
+                if result.get("success"):
                     self.notify("Configuration saved successfully", severity="information")
                 else:
                     self.notify("Failed to save configuration", severity="error")
 
         # Get current configuration
         current_config = {}
-        if self.client_adapter and hasattr(self.client_adapter, 'get_config'):
+        if self.client_adapter and hasattr(self.client_adapter, "get_config"):
             result = self.client_adapter.get_config()
-            if result.get('success'):
-                current_config = result.get('config', {})
+            if result.get("success"):
+                current_config = result.get("config", {})
 
-        config_screen = ConfigurationScreen(
-            config=current_config,
-            save_callback=save_callback
-        )
+        config_screen = ConfigurationScreen(config=current_config, save_callback=save_callback)
         await self.push_screen_wait(config_screen)
 
     def action_file_transfers(self) -> None:
@@ -1912,11 +1896,32 @@ class JarvisApp(App):
         """Worker to show file transfer screen."""
         file_transfer_screen = FileTransferScreen()
 
-        # TODO: Populate with active transfers from client_adapter
-        # if self.client_adapter and hasattr(self.client_adapter, 'get_active_transfers'):
-        #     transfers = self.client_adapter.get_active_transfers()
-        #     for transfer in transfers:
-        #         file_transfer_screen.add_transfer(...)
+        # Populate with active transfers from client_adapter
+        if self.client_adapter:
+            response = self.client_adapter.get_file_transfers()
+            if response and response.get("success"):
+                transfers = response.get("transfers", {})
+                for transfer_id, transfer_info in transfers.items():
+                    # Add active transfers to the screen
+                    filename = transfer_info.get("filename", "Unknown")
+                    size = transfer_info.get("size", 0)
+                    progress = transfer_info.get("progress", {})
+
+                    file_transfer_screen.add_transfer(
+                        transfer_id=transfer_id, filename=filename, total_size=size
+                    )
+
+                    # Update progress if available
+                    if progress.get("status") == "in_progress":
+                        bytes_transferred = progress.get("bytes_transferred", 0)
+                        speed_bps = progress.get("speed_bytes_per_sec", 0.0)
+                        file_transfer_screen.update_transfer(
+                            transfer_id=transfer_id,
+                            bytes_transferred=bytes_transferred,
+                            speed_bps=speed_bps,
+                        )
+                    elif progress.get("status") == "complete":
+                        file_transfer_screen.complete_transfer(transfer_id)
 
         await self.push_screen_wait(file_transfer_screen)
 

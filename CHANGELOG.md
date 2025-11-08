@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2025-11-08
+
 ### Fixed
+- **CRITICAL:** Silent exception handling in contact persistence (contact.py:95-96, 104-105) preventing error detection and causing potential data loss
+- **CRITICAL:** Silent exception handling in message persistence (message.py:124-125, 141-142) preventing error detection and causing potential data loss
+- **CRITICAL:** Silent exception handling in group persistence (group.py:149-150, 158-159) preventing error detection and causing potential data loss
+- **HIGH:** Resource leak in message_queue.py where database connections never closed properly leading to file descriptor exhaustion
+- **HIGH:** Unbounded send queue and receive buffer in network.py allowing memory exhaustion via DoS attacks
+- **MEDIUM:** Platform incompatibility in server.py using SIGTERM signal unavailable on Windows
+- **MEDIUM:** Inadequate IP validation in utils.py accepting loopback, multicast, link-local, and reserved addresses
+- All file I/O operations now use UTF-8 encoding explicitly to prevent character encoding issues across platforms
+- All save operations now use atomic file writes (write to temporary file then rename) to prevent data corruption during crashes or interruptions
+- Corrupted JSON files in persistence layer now handled gracefully (logs warning and continues) instead of crashing
 - README installation instructions now reference correct repository name (jarvisapp instead of jarvis)
 - Repository clone path corrected from `orpheus497/jarvis` to `orpheus497/jarvisapp`
 - pyproject.toml project URLs now point to jarvisapp repository
@@ -15,18 +27,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Markdown formatting standardized across README sections
 
 ### Added
+- Async file I/O methods using aiofiles library for non-blocking persistence operations in contact.py, message.py, and group.py
+- Comprehensive error logging throughout contact, message, and group management modules with info, debug, and error levels
+- Specific exception handling (IOError, OSError, JSONDecodeError) replacing broad exception catching to prevent masking critical errors
+- Type hints added to all public methods in contact.py, message.py, and group.py (return types, parameter types) for improved IDE support and type safety
+- Logging statements throughout persistence layer providing visibility into save operations, load operations, and error conditions
+- Message and contact deletion operations now log counts of items deleted for auditability
+- Contact manager now provides both async and sync versions of save methods (save_contacts_async, mark_online_async, mark_offline_async)
+- Message store now provides both async and sync versions of save methods (save_messages_async)
+- Group manager save operations enhanced with detailed logging
+- Context manager support (__enter__, __exit__) for MessageQueue class enabling proper resource cleanup with Python 'with' statement
+- Resource limits in network.py: SEND_QUEUE_MAX_SIZE (1000 messages) and RECEIVE_BUFFER_MAX_SIZE (1MB) to prevent memory exhaustion
+- Platform-specific signal handling in server.py supporting both Unix SIGTERM and Windows SIGBREAK
+- IPv6 support in IP address validation alongside existing IPv4 support
+- Configurable IP validation parameters: allow_private and allow_loopback flags in utils.validate_ip()
+- Queue timeout handling (5 second timeout) in network.py send operations preventing indefinite blocking
+- Buffer overflow protection in network.py receive loop disconnecting connections exceeding 1MB buffer
 - Complete UI color palette documentation including red, white, black, grey, purple, cyan, and amber
 - docs/COLORS.md with detailed color usage across status indicators, banners, messages, and actions
 - docs/DEPENDENCIES.md with comprehensive FOSS dependency attributions, licenses, and upstream links
 - Link to docs/COLORS.md in README Interface section
 - Link to docs/DEPENDENCIES.md in README Acknowledgements section
 - License information for all dependencies in README
+- **File Transfer Integration:** Complete server-side file transfer handling in server.py using FileTransferSession for chunked, encrypted file transfers
+- **Search Engine Integration:** MessageSearchEngine initialization in server.py enabling SQLite FTS5 full-text search across message history
+- **File Transfer Handlers:** _handle_send_file(), _handle_get_file_transfers(), and _handle_cancel_file_transfer() methods with validation and progress tracking
+- **Search Handlers:** _handle_search_messages(), _handle_search_by_contact(), and _handle_search_by_date() methods using MessageSearchEngine
+- **UI Search Integration:** Search screen now connected to MessageSearchEngine via client_adapter for full-text search with highlighting
+- **UI File Transfer Integration:** File transfer screen now populated with active transfers from server including progress information
+- FileTransferSession import in server.py for managing file transfer state and chunking
+- MessageSearchEngine import in server.py for SQLite-based message search
+- **Async Identity I/O:** save_identity_async() method in identity.py using aiofiles for non-blocking file operations
+- Comprehensive logging throughout identity.py (load, save, export, delete operations) with info, debug, warning, and error levels
+- Specific exception handling in identity.py (CryptoError, JSONDecodeError, IOError) for better error diagnosis
+- Atomic file writes in export_complete_account() to prevent corruption during export operations
+- **Quality Tooling:** Complete pyproject.toml configuration for black, ruff, mypy, pytest, and coverage
+- **Pre-commit Hooks:** .pre-commit-config.yaml with ruff, mypy, security checks (bandit), and file validation
+- **Test Infrastructure:** conftest.py with pytest fixtures for temp directories, sample data, and test markers
+- **Example Tests:** test_utils.py demonstrating test infrastructure with 30+ unit tests for validation functions
+- **CONTRIBUTING.md:** Comprehensive contributor guidelines with development setup, workflow, code style, and testing guidelines
+- **ARCHITECTURE.md:** Detailed system architecture documentation with diagrams, data flow, security architecture, and component descriptions
+- **Comprehensive Docstrings:** Google-style docstrings added to critical server.py methods with Args, Returns, Raises, and Note sections
+- Detailed docstrings for start(), stop(), run(), _handle_client(), _process_command(), _handle_login(), _handle_send_message()
+- Detailed docstrings for _handle_send_file(), _handle_search_messages() documenting file transfer and search functionality
+- Enhanced return type hints throughout server.py (-> None, -> bool, -> Dict[str, Any]) for IDE support
 
 ### Changed
+- All persistence save methods now use atomic file writes (temp file + rename) for data safety and crash resistance
+- Contact manager save operations now available in both synchronous and asynchronous versions for compatibility
+- Message store save operations now available in both synchronous and asynchronous versions for compatibility
+- Identity manager save operations now available in both synchronous and asynchronous versions for compatibility
+- All file operations in identity.py now use explicit UTF-8 encoding and proper error handling
+- All file operations now include proper error handling with specific exception types and error logging
+- Error messages now provide actionable context and stack traces instead of silent failures
+- File load operations now handle corrupted JSON gracefully by logging warning and starting with empty data instead of crashing application
+- MessageQueue.close() method now includes type hint (-> None) for IDE support
+- P2PConnection.send_queue initialization changed from unbounded Queue() to Queue(maxsize=1000) preventing memory exhaustion
+- P2PConnection send operations (send_message, send_group_message, ping, pong) now use 5-second timeout instead of blocking indefinitely
+- IP validation in utils.py migrated from regex-based approach to Python ipaddress module for RFC-compliant validation
+- IP validation now rejects loopback (127.0.0.0/8, ::1), unspecified (0.0.0.0, ::), reserved, link-local (169.254.0.0/16, fe80::/10), and multicast addresses by default
+- Signal handler setup in server.py now detects platform and uses appropriate signal (SIGTERM on Unix, SIGBREAK on Windows)
 - README networking guidance now emphasizes built-in NAT traversal (UPnP/STUN) and local OS tools
 - README Interface section explicitly documents complete color palette with usage descriptions
 - README Acknowledgements section references centralized dependency documentation
 - Networking section reorganized with automatic NAT traversal as primary method
+
+### Security
+- Data persistence operations now use atomic file writes to prevent corruption during crashes or interruptions
+- Proper exception handling prevents information leakage through uncontrolled error messages
+- All file I/O operations validate and handle errors before proceeding to prevent undefined behavior
+- UTF-8 encoding explicitly specified to prevent encoding-based injection attacks
+- Resource limits (queue size, buffer size) prevent denial-of-service attacks via memory exhaustion
+- Database connections in MessageQueue now properly closed via context manager preventing file descriptor leaks
+- Receive buffer overflow protection in P2PConnection prevents malicious peers from exhausting memory
+- Send queue limits prevent backpressure-based denial-of-service attacks
+- IP validation now rejects dangerous address ranges (loopback, reserved, multicast, link-local) preventing connection to invalid endpoints
+- Enhanced IP validation using Python ipaddress module provides RFC-compliant security checking
 
 ## [2.1.0] - 2025-10-31
 
