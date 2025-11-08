@@ -20,6 +20,7 @@ import asyncio
 import contextlib
 import logging
 import struct
+import time
 from pathlib import Path
 from typing import Callable, Dict, Optional, Set, Tuple
 
@@ -117,8 +118,8 @@ class P2PConnection:
         self.keepalive_task: Optional[asyncio.Task] = None
 
         self.buffer = b""
-        self.last_ping = asyncio.get_event_loop().time()
-        self.last_pong = asyncio.get_event_loop().time()
+        self.last_ping = time.time()
+        self.last_pong = time.time()
 
         # Rate limiting and metrics
         self.rate_limiter = rate_limiter
@@ -532,7 +533,7 @@ class P2PConnection:
                     # Use timeout to prevent blocking if queue is full
                     try:
                         await asyncio.wait_for(self.send_queue.put(ping), timeout=1.0)
-                        self.last_ping = asyncio.get_event_loop().time()
+                        self.last_ping = time.time()
 
                         # Record ping time for latency measurement
                         self.metrics.record_ping()
@@ -542,7 +543,7 @@ class P2PConnection:
                         )
 
                     # Check if we've received a pong recently
-                    if asyncio.get_event_loop().time() - self.last_pong > self.PONG_TIMEOUT:
+                    if time.time() - self.last_pong > self.PONG_TIMEOUT:
                         logger.warning(
                             f"No pong from {self.contact.username} in {self.PONG_TIMEOUT}s"
                         )
@@ -627,7 +628,7 @@ class P2PConnection:
 
         elif msg_type == MessageType.PONG:
             # Update last pong time
-            self.last_pong = asyncio.get_event_loop().time()
+            self.last_pong = time.time()
 
             # Record pong time for latency measurement
             latency = self.metrics.record_pong()
@@ -674,9 +675,20 @@ class P2PConnection:
         if self.on_state_change_callback:
             # Call callback (may be sync or async)
             if asyncio.iscoroutinefunction(self.on_state_change_callback):
-                asyncio.create_task(self.on_state_change_callback(self.contact.uid, state))
+                # Create task with exception handler to prevent silent failures
+                task = asyncio.create_task(self.on_state_change_callback(self.contact.uid, state))
+                task.add_done_callback(self._handle_callback_exception)
             else:
                 self.on_state_change_callback(self.contact.uid, state)
+
+    def _handle_callback_exception(self, task: asyncio.Task):
+        """Handle exceptions from async state change callbacks."""
+        try:
+            task.result()  # Retrieve exception if any
+        except asyncio.CancelledError:
+            pass  # Task was cancelled, this is expected
+        except Exception as e:
+            logger.error(f"Exception in state change callback for {self.contact.username}: {e}", exc_info=True)
 
 
 class P2PServer:
@@ -779,15 +791,15 @@ class P2PServer:
             try:
                 writer.close()
                 await writer.wait_closed()
-            except:
-                pass
+            except (OSError, RuntimeError, asyncio.CancelledError) as e:
+                logger.debug(f"Error closing writer after timeout: {e}")
         except Exception as e:
             logger.error(f"Error handling connection from {address}: {e}")
             try:
                 writer.close()
                 await writer.wait_closed()
-            except:
-                pass
+            except (OSError, RuntimeError, asyncio.CancelledError) as e:
+                logger.debug(f"Error closing writer after error: {e}")
 
 
 class ConnectionPoolEntry:
@@ -795,8 +807,8 @@ class ConnectionPoolEntry:
 
     def __init__(self, connection: P2PConnection):
         self.connection = connection
-        self.created_at = asyncio.get_event_loop().time()
-        self.last_used = asyncio.get_event_loop().time()
+        self.created_at = time.time()
+        self.last_used = time.time()
         self.reuse_count = 0
         self.is_healthy = True
 

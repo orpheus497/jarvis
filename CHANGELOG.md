@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Reduces file I/O operations by ~90% under normal load
   - Added flush() method for explicit persistence control
   - Prevents message loss via dirty flag tracking
+- **HIGH:** Fixed exception handling and deprecated APIs in network layer (network.py)
+  - Replaced bare except clauses with specific exception types in writer cleanup
+  - Fixed deprecated asyncio.get_event_loop() calls (replaced with time.time())
+  - Added exception handler for unreferenced async state change callback tasks
+  - Prevents silent task exception loss and improves error visibility
 
 ### Fixed
 - Fixed file transfer encryption to use secrets module for cryptographically secure nonce generation
@@ -58,6 +63,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Every message addition no longer triggers immediate file write
   - Implemented intelligent batching based on count and time
   - Added dirty flag tracking to prevent unnecessary saves
+- Fixed bare except clauses in network layer (network.py)
+  - Replaced 2 bare except clauses with specific exception handling (OSError, RuntimeError, asyncio.CancelledError)
+  - Added debug logging for writer cleanup failures
+  - Prevents catching SystemExit and KeyboardInterrupt
+- Fixed deprecated asyncio.get_event_loop() usage in network layer (network.py)
+  - Replaced 7 instances of deprecated asyncio.get_event_loop().time() with time.time()
+  - Modernized timing code to use standard library time module
+  - Eliminates deprecation warnings and improves compatibility
+- Fixed unreferenced async task in connection state callbacks (network.py)
+  - Added exception handler callback to state change notification tasks
+  - Prevents silent loss of exceptions in async callbacks
+  - Added _handle_callback_exception method for proper error logging
 - Added proper error handling and logging to file transfer operations
 - Added OSError-specific exception handling for file I/O operations in file transfer
 - Session manager now uses atomic file writes (temp file + rename) to prevent corruption
@@ -74,6 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All message queue methods now protected against concurrent access
 - Message storage now uses write-behind caching with configurable batch size
 - Message persistence strategy changed from immediate to batched writes
+- Network layer timing now uses time.time() instead of deprecated asyncio.get_event_loop().time()
+- Network layer writer cleanup now uses specific exception types instead of bare except
+- Connection state callbacks now properly track and log async task exceptions
 
 ### Added
 - Atomic file writes in session manager to prevent data corruption during crashes
@@ -86,6 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Aggressive batch cleanup for skip keys to prevent DoS attacks
 - Cleanup methods for expired and oldest skip keys in ratchet
 - Enhanced logging throughout ratchet, crypto, and utils modules
+- Exception handler callback (_handle_callback_exception) for async state change notifications in network layer
+- Debug logging for network writer cleanup failures
 
 ### Performance
 - Reduced memory usage in Double Ratchet by removing expired skip keys automatically
