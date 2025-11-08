@@ -22,6 +22,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bootstrap node support for network joining
 - Announce and find_peer methods with local caching
 - Comprehensive DHT statistics (total contacts, bucket utilization, storage size)
+- **DHT Network RPCs:** Complete network communication layer for Kademlia DHT
+- RPC server listening on configurable port (default 6881) for DHT operations
+- PING RPC for node liveness checking
+- STORE RPC for storing key-value pairs on remote nodes
+- FIND_NODE RPC for discovering closest nodes to target ID
+- FIND_VALUE RPC for iterative value lookup across DHT
+- Iterative lookups with concurrent queries (ALPHA=3 parameter)
+- Bootstrap process with automatic peer discovery
+- RPC statistics tracking (ping, store, find_node, find_value counts)
+- Network announce with distribution to K closest nodes
+- Comprehensive error handling and timeouts for all RPCs
+- **Advanced Metrics Visualization:** ASCII-based charts and graphs for terminal display
+- BarChart widget for visualizing metric distributions with horizontal bars
+- SparklineChart widget for showing metric trends over time
+- GaugeChart widget for displaying percentage-based metrics
+- Automatic value scaling and formatting (K/M suffixes)
+- Support for multiple data series in charts
+- Visual quality indicators based on metric thresholds
+- Real-time chart updates with data refresh methods
 - **Connection Metrics Integration:** NetworkManager.get_connection_metrics() method for retrieving per-peer connection statistics
 - Connection metrics now properly displayed in UI statistics dashboard
 - Latency, throughput, packet loss, and quality indicators available per contact
@@ -42,10 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - scan_qr_code() in qr_code.py now fully functional (replaced placeholder implementation)
-- SimpleDHT class upgraded from placeholder to full Kademlia implementation with routing table and storage
-- DHT announce() and find_peer() methods now functional with local storage (network RPC to be added in future)
+- SimpleDHT class upgraded from placeholder to full Kademlia implementation with routing table, storage, and network RPCs
+- DHT announce() now distributes peer information to K closest nodes via STORE RPC
+- DHT find_peer() now performs iterative lookups across network using FIND_VALUE RPC
+- DHT start() now launches RPC server and bootstrap process with automatic peer discovery
 - UI statistics dashboard now retrieves actual connection metrics instead of placeholder zeros
 - Connection status indicators enhanced to show "disconnected" or "metrics_unavailable" when data not available
+- Statistics displays can now include visual charts (bar charts, sparklines, gauges) for better data comprehension
 - NetworkManager now initializes ConnectionPool instance for managing P2P connections
 - NetworkManager.start_server() now starts connection pool health checks automatically
 - NetworkManager.stop_server() now stops connection pool health checks and clears pool on shutdown

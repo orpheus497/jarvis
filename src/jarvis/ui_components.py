@@ -9,7 +9,7 @@ Author: orpheus497
 Version: 2.0.0
 """
 
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from rich.table import Table
 from rich.text import Text
@@ -420,3 +420,231 @@ class StatisticsChart(Static):
             table.add_row("Uptime", f"{hours}h {minutes}m")
 
         return table
+
+
+class BarChart(Static):
+    """ASCII bar chart visualization for terminal display."""
+
+    def __init__(
+        self,
+        data: Dict[str, float],
+        *,
+        max_value: Optional[float] = None,
+        bar_width: int = 40,
+        name: Optional[str] = None,
+        id: Optional[str] = None,
+        classes: Optional[str] = None,
+    ):
+        """
+        Initialize bar chart.
+
+        Args:
+            data: Dictionary of label to value
+            max_value: Maximum value for scaling (auto if None)
+            bar_width: Width of bars in characters
+            name: Widget name
+            id: Widget ID
+            classes: CSS classes
+        """
+        super().__init__(name=name, id=id, classes=classes)
+        self.data = data
+        self.max_value = max_value
+        self.bar_width = bar_width
+
+    def update_data(self, data: Dict[str, float], max_value: Optional[float] = None) -> None:
+        """
+        Update chart data.
+
+        Args:
+            data: New data dictionary
+            max_value: New maximum value
+        """
+        self.data = data
+        if max_value is not None:
+            self.max_value = max_value
+        self.update(self._render_chart())
+
+    def _render_chart(self) -> str:
+        """Render ASCII bar chart."""
+        if not self.data:
+            return "No data available"
+
+        # Determine max value for scaling
+        max_val = self.max_value if self.max_value else max(self.data.values(), default=1)
+        if max_val == 0:
+            max_val = 1
+
+        lines = []
+        for label, value in self.data.items():
+            # Calculate bar length
+            if max_val > 0:
+                bar_len = int((value / max_val) * self.bar_width)
+            else:
+                bar_len = 0
+
+            # Create bar
+            bar = "█" * bar_len
+
+            # Format value
+            if value >= 1000000:
+                val_str = f"{value/1000000:.1f}M"
+            elif value >= 1000:
+                val_str = f"{value/1000:.1f}K"
+            else:
+                val_str = f"{value:.1f}"
+
+            # Combine label, bar, and value
+            line = f"{label:20s} {bar:40s} {val_str}"
+            lines.append(line)
+
+        return "\n".join(lines)
+
+    def render(self) -> str:
+        """Render the chart."""
+        return self._render_chart()
+
+
+class SparklineChart(Static):
+    """Sparkline chart for showing trends in terminal."""
+
+    def __init__(
+        self,
+        values: List[float],
+        *,
+        label: str = "",
+        name: Optional[str] = None,
+        id: Optional[str] = None,
+        classes: Optional[str] = None,
+    ):
+        """
+        Initialize sparkline chart.
+
+        Args:
+            values: List of values to plot
+            label: Chart label
+            name: Widget name
+            id: Widget ID
+            classes: CSS classes
+        """
+        super().__init__(name=name, id=id, classes=classes)
+        self.values = values
+        self.label = label
+
+    def update_values(self, values: List[float], label: Optional[str] = None) -> None:
+        """
+        Update chart values.
+
+        Args:
+            values: New values list
+            label: New label (optional)
+        """
+        self.values = values
+        if label is not None:
+            self.label = label
+        self.update(self._render_sparkline())
+
+    def _render_sparkline(self) -> str:
+        """Render sparkline chart."""
+        if not self.values:
+            return f"{self.label}: No data"
+
+        # Sparkline characters (lowest to highest)
+        chars = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
+
+        min_val = min(self.values)
+        max_val = max(self.values)
+        value_range = max_val - min_val
+
+        if value_range == 0:
+            # All values are the same
+            sparkline = chars[len(chars) // 2] * len(self.values)
+        else:
+            # Map each value to a character
+            sparkline = ""
+            for value in self.values:
+                normalized = (value - min_val) / value_range
+                char_index = int(normalized * (len(chars) - 1))
+                sparkline += chars[char_index]
+
+        # Format statistics
+        avg_val = sum(self.values) / len(self.values)
+        stats = f"min={min_val:.1f} avg={avg_val:.1f} max={max_val:.1f}"
+
+        return f"{self.label}\n{sparkline}\n{stats}"
+
+    def render(self) -> str:
+        """Render the sparkline."""
+        return self._render_sparkline()
+
+
+class GaugeChart(Static):
+    """ASCII gauge chart for visualizing percentage values."""
+
+    def __init__(
+        self,
+        value: float,
+        *,
+        label: str = "",
+        max_value: float = 100.0,
+        width: int = 50,
+        name: Optional[str] = None,
+        id: Optional[str] = None,
+        classes: Optional[str] = None,
+    ):
+        """
+        Initialize gauge chart.
+
+        Args:
+            value: Current value
+            label: Gauge label
+            max_value: Maximum value
+            width: Gauge width in characters
+            name: Widget name
+            id: Widget ID
+            classes: CSS classes
+        """
+        super().__init__(name=name, id=id, classes=classes)
+        self.value = value
+        self.label = label
+        self.max_value = max_value
+        self.width = width
+
+    def update_value(self, value: float) -> None:
+        """
+        Update gauge value.
+
+        Args:
+            value: New value
+        """
+        self.value = value
+        self.update(self._render_gauge())
+
+    def _render_gauge(self) -> str:
+        """Render ASCII gauge."""
+        # Calculate percentage
+        percentage = min(100, max(0, (self.value / self.max_value) * 100))
+
+        # Calculate fill length
+        fill_len = int((percentage / 100) * self.width)
+
+        # Choose color character based on percentage
+        if percentage >= 75:
+            fill_char = "█"  # Full block (good)
+        elif percentage >= 50:
+            fill_char = "▓"  # Dark shade (moderate)
+        elif percentage >= 25:
+            fill_char = "▒"  # Medium shade (low)
+        else:
+            fill_char = "░"  # Light shade (critical)
+
+        # Create gauge
+        filled = fill_char * fill_len
+        empty = "░" * (self.width - fill_len)
+        gauge = f"[{filled}{empty}]"
+
+        # Format
+        return f"{self.label}\n{gauge} {percentage:.1f}%"
+
+    def render(self) -> str:
+        """Render the gauge."""
+        return self._render_gauge()

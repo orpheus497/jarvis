@@ -504,6 +504,21 @@ class SimpleDHT:
         # Running state
         self.running = False
         self.maintenance_task: Optional[asyncio.Task] = None
+        self.server_task: Optional[asyncio.Task] = None
+        self.server: Optional[asyncio.Server] = None
+        self.listen_port: Optional[int] = None
+
+        # RPC statistics
+        self.rpc_stats = {
+            "ping_sent": 0,
+            "ping_received": 0,
+            "store_sent": 0,
+            "store_received": 0,
+            "find_node_sent": 0,
+            "find_node_received": 0,
+            "find_value_sent": 0,
+            "find_value_received": 0,
+        }
 
         logger.info(f"Kademlia DHT node initialized with ID: {self.node_id[:16]}...")
 
@@ -631,15 +646,30 @@ class SimpleDHT:
 
         return entry["value"]
 
-    async def start(self, bootstrap_nodes: Optional[List[Tuple[str, int]]] = None):
+    async def start(
+        self, bootstrap_nodes: Optional[List[Tuple[str, int]]] = None, listen_port: int = 6881
+    ):
         """
-        Start Kademlia DHT node.
+        Start Kademlia DHT node with RPC server.
 
         Args:
             bootstrap_nodes: List of (host, port) tuples for bootstrap
+            listen_port: Port to listen on for DHT RPCs (default: 6881)
         """
         self.running = True
         self.bootstrap_nodes = bootstrap_nodes or []
+        self.listen_port = listen_port
+
+        # Start RPC server
+        try:
+            self.server = await asyncio.start_server(
+                self._handle_rpc_connection, "0.0.0.0", listen_port
+            )
+            logger.info(f"DHT RPC server listening on port {listen_port}")
+        except Exception as e:
+            logger.error(f"Failed to start DHT RPC server: {e}")
+            self.running = False
+            return
 
         logger.info("Kademlia DHT node started")
 
@@ -659,15 +689,32 @@ class SimpleDHT:
         """Bootstrap by connecting to known nodes."""
         logger.info(f"Bootstrapping with {len(self.bootstrap_nodes)} nodes...")
 
-        # In a full implementation, would:
-        # 1. Connect to each bootstrap node
-        # 2. Send FIND_NODE for our own ID
-        # 3. Populate routing table with responses
-        # 4. Perform iterative lookups to fill buckets
-
-        # For now, just log the attempt
         for host, port in self.bootstrap_nodes:
-            logger.debug(f"Would bootstrap from {host}:{port}")
+            try:
+                # Ping bootstrap node to verify it's alive
+                logger.debug(f"Pinging bootstrap node {host}:{port}")
+                response = await self._send_ping(host, port)
+
+                if response and "node_id" in response:
+                    # Add bootstrap node to routing table
+                    boot_node_id = response["node_id"]
+                    self.add_node(boot_node_id, host, port, response.get("uid", ""))
+
+                    # Find nodes close to ourselves
+                    logger.debug(f"Finding nodes close to our ID from {host}:{port}")
+                    find_response = await self._send_find_node(host, port, self.node_id)
+
+                    if find_response and "nodes" in find_response:
+                        # Add discovered nodes to routing table
+                        for node in find_response["nodes"]:
+                            self.add_node(
+                                node["node_id"], node["host"], node["port"], node.get("uid", "")
+                            )
+                        logger.info(
+                            f"Discovered {len(find_response['nodes'])} nodes from bootstrap"
+                        )
+            except Exception as e:
+                logger.warning(f"Bootstrap from {host}:{port} failed: {e}")
 
     async def _maintenance_loop(self):
         """Periodic maintenance task."""
@@ -703,6 +750,12 @@ class SimpleDHT:
     async def stop(self):
         """Stop Kademlia DHT node."""
         self.running = False
+
+        # Stop RPC server
+        if self.server:
+            self.server.close()
+            await self.server.wait_closed()
+            logger.info("DHT RPC server stopped")
 
         # Cancel maintenance task
         if self.maintenance_task:
@@ -740,13 +793,24 @@ class SimpleDHT:
         key = self._generate_node_id(self.uid)
         self.store_value(key, peer_info)
 
-        # In a full implementation, would:
-        # 1. Find K closest nodes to our UID
-        # 2. Send STORE RPC to each
-        # 3. Periodically republish (every REPUBLISH_INTERVAL)
+        # Find K closest nodes to our UID
+        closest_nodes = self.find_closest_nodes(key, self.K)
 
-        logger.info(f"Announced presence in DHT: {self.username} on port {port}")
-        return True
+        # Send STORE RPC to each closest node
+        store_count = 0
+        for node in closest_nodes:
+            try:
+                success = await self._send_store(node["address"], node["port"], key, peer_info)
+                if success:
+                    store_count += 1
+            except Exception as e:
+                logger.debug(f"Failed to store at {node['address']}:{node['port']}: {e}")
+
+        logger.info(
+            f"Announced presence in DHT: {self.username} on port {port} "
+            f"(stored at {store_count}/{len(closest_nodes)} nodes)"
+        )
+        return store_count > 0 or len(closest_nodes) == 0
 
     async def find_peer(self, uid: str) -> Optional[Dict[str, Any]]:
         """
@@ -767,15 +831,226 @@ class SimpleDHT:
             logger.debug(f"Found peer {uid[:8]}... in local storage")
             return local_value
 
-        # In a full implementation, would perform iterative lookup:
-        # 1. Find K closest nodes to target key
-        # 2. Send FIND_VALUE RPC to closest nodes
-        # 3. If value found, return it
-        # 4. Otherwise, continue with next closest nodes
-        # 5. Repeat until value found or no closer nodes remain
+        # Perform iterative lookup
+        closest_nodes = self.find_closest_nodes(key, self.K)
+        queried_nodes = set()
+        found_value = None
 
-        logger.debug(f"Peer {uid[:8]}... not found in DHT (would query {self.ALPHA} nodes)")
-        return None
+        # Query nodes in batches of ALPHA
+        while closest_nodes and not found_value:
+            # Select next ALPHA nodes to query
+            to_query = []
+            for node in closest_nodes:
+                node_id = node["node_id"]
+                if node_id not in queried_nodes:
+                    to_query.append(node)
+                    queried_nodes.add(node_id)
+                if len(to_query) >= self.ALPHA:
+                    break
+
+            if not to_query:
+                break
+
+            # Query nodes concurrently
+            tasks = []
+            for node in to_query:
+                task = self._send_find_value(node["address"], node["port"], key)
+                tasks.append(task)
+
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Process responses
+            for response in responses:
+                if isinstance(response, dict):
+                    if "value" in response:
+                        # Found the value!
+                        found_value = response["value"]
+                        logger.info(f"Found peer {uid[:8]}... in DHT via iterative lookup")
+                        break
+                    elif "nodes" in response:
+                        # Add new nodes to search space
+                        for new_node in response["nodes"]:
+                            if new_node["node_id"] not in queried_nodes:
+                                self.add_node(
+                                    new_node["node_id"],
+                                    new_node["host"],
+                                    new_node["port"],
+                                    new_node.get("uid", ""),
+                                )
+
+            if not found_value:
+                # Update closest nodes for next iteration
+                closest_nodes = self.find_closest_nodes(key, self.K)
+
+        if not found_value:
+            logger.debug(f"Peer {uid[:8]}... not found in DHT after querying {len(queried_nodes)} nodes")
+
+        return found_value
+
+    async def _handle_rpc_connection(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
+        """Handle incoming RPC connection."""
+        addr = writer.get_extra_info("peername")
+        try:
+            # Read request (4-byte length prefix + JSON)
+            length_bytes = await asyncio.wait_for(reader.readexactly(4), timeout=5.0)
+            length = int.from_bytes(length_bytes, "big")
+
+            if length > 65536:  # 64KB max
+                logger.warning(f"RPC request too large from {addr}: {length} bytes")
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            data = await asyncio.wait_for(reader.readexactly(length), timeout=5.0)
+            request = json.loads(data.decode("utf-8"))
+
+            # Process request
+            response = await self._process_rpc(request, addr)
+
+            # Send response
+            response_json = json.dumps(response).encode("utf-8")
+            response_length = len(response_json).to_bytes(4, "big")
+            writer.write(response_length + response_json)
+            await writer.drain()
+
+        except Exception as e:
+            logger.debug(f"RPC error from {addr}: {e}")
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    async def _process_rpc(self, request: Dict[str, Any], addr: Tuple) -> Dict[str, Any]:
+        """Process RPC request and return response."""
+        rpc_type = request.get("type")
+
+        if rpc_type == "ping":
+            self.rpc_stats["ping_received"] += 1
+            return {
+                "type": "pong",
+                "node_id": self.node_id,
+                "uid": self.uid,
+                "username": self.username,
+            }
+
+        elif rpc_type == "store":
+            self.rpc_stats["store_received"] += 1
+            key = request.get("key")
+            value = request.get("value")
+            if key and value:
+                self.store_value(key, value)
+                return {"type": "store_response", "success": True}
+            return {"type": "store_response", "success": False}
+
+        elif rpc_type == "find_node":
+            self.rpc_stats["find_node_received"] += 1
+            target_id = request.get("target_id")
+            if target_id:
+                closest = self.find_closest_nodes(target_id, self.K)
+                return {
+                    "type": "find_node_response",
+                    "nodes": [
+                        {
+                            "node_id": n["node_id"],
+                            "host": n["address"],
+                            "port": n["port"],
+                            "uid": n.get("uid", ""),
+                        }
+                        for n in closest
+                    ],
+                }
+            return {"type": "find_node_response", "nodes": []}
+
+        elif rpc_type == "find_value":
+            self.rpc_stats["find_value_received"] += 1
+            key = request.get("key")
+            if key:
+                value = self.get_value(key)
+                if value:
+                    return {"type": "find_value_response", "value": value}
+                else:
+                    # Return closest nodes instead
+                    closest = self.find_closest_nodes(key, self.K)
+                    return {
+                        "type": "find_value_response",
+                        "nodes": [
+                            {
+                                "node_id": n["node_id"],
+                                "host": n["address"],
+                                "port": n["port"],
+                                "uid": n.get("uid", ""),
+                            }
+                            for n in closest
+                        ],
+                    }
+            return {"type": "find_value_response"}
+
+        return {"type": "error", "message": "Unknown RPC type"}
+
+    async def _send_ping(self, host: str, port: int) -> Optional[Dict[str, Any]]:
+        """Send PING RPC to node."""
+        self.rpc_stats["ping_sent"] += 1
+        return await self._send_rpc(host, port, {"type": "ping"})
+
+    async def _send_store(
+        self, host: str, port: int, key: str, value: Dict[str, Any]
+    ) -> bool:
+        """Send STORE RPC to node."""
+        self.rpc_stats["store_sent"] += 1
+        response = await self._send_rpc(host, port, {"type": "store", "key": key, "value": value})
+        return response and response.get("success", False)
+
+    async def _send_find_node(
+        self, host: str, port: int, target_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Send FIND_NODE RPC to node."""
+        self.rpc_stats["find_node_sent"] += 1
+        return await self._send_rpc(host, port, {"type": "find_node", "target_id": target_id})
+
+    async def _send_find_value(
+        self, host: str, port: int, key: str
+    ) -> Optional[Dict[str, Any]]:
+        """Send FIND_VALUE RPC to node."""
+        self.rpc_stats["find_value_sent"] += 1
+        return await self._send_rpc(host, port, {"type": "find_value", "key": key})
+
+    async def _send_rpc(
+        self, host: str, port: int, request: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Send RPC request and get response."""
+        try:
+            # Connect to node
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port), timeout=self.PING_TIMEOUT
+            )
+
+            # Send request
+            request_json = json.dumps(request).encode("utf-8")
+            request_length = len(request_json).to_bytes(4, "big")
+            writer.write(request_length + request_json)
+            await writer.drain()
+
+            # Read response
+            length_bytes = await asyncio.wait_for(reader.readexactly(4), timeout=self.PING_TIMEOUT)
+            length = int.from_bytes(length_bytes, "big")
+
+            if length > 65536:  # 64KB max
+                writer.close()
+                await writer.wait_closed()
+                return None
+
+            data = await asyncio.wait_for(reader.readexactly(length), timeout=self.PING_TIMEOUT)
+            response = json.loads(data.decode("utf-8"))
+
+            writer.close()
+            await writer.wait_closed()
+
+            return response
+
+        except Exception as e:
+            logger.debug(f"RPC to {host}:{port} failed: {e}")
+            return None
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get comprehensive DHT statistics."""
@@ -792,4 +1067,6 @@ class SimpleDHT:
             "bootstrap_nodes": len(self.bootstrap_nodes),
             "k_parameter": self.K,
             "alpha_parameter": self.ALPHA,
+            "listen_port": self.listen_port,
+            "rpc_stats": self.rpc_stats.copy(),
         }
