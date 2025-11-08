@@ -5,13 +5,17 @@ This module handles secure file transfer with chunking, encryption,
 compression, checksums, and resume capability. Supports large files
 with progress tracking and automatic retry.
 
+Security: Uses cryptographically secure random nonces for ChaCha20Poly1305
+encryption to prevent nonce reuse attacks.
+
 Author: orpheus497
-Version: 2.3.0
+Version: 2.4.0
 """
 
 import asyncio
 import hashlib
 import logging
+import secrets
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -170,22 +174,37 @@ class FileTransferSession:
 
         Returns:
             Hex-encoded checksum
+
+        Raises:
+            FileTransferError: If file cannot be read
         """
-        sha256 = hashlib.sha256()
-        with open(file_path, "rb") as f:
-            while True:
-                data = f.read(FILE_CHUNK_SIZE)
-                if not data:
-                    break
-                sha256.update(data)
-        return sha256.hexdigest()
+        try:
+            sha256 = hashlib.sha256()
+            with open(file_path, "rb") as f:
+                while True:
+                    data = f.read(FILE_CHUNK_SIZE)
+                    if not data:
+                        break
+                    sha256.update(data)
+            return sha256.hexdigest()
+        except OSError as e:
+            logger.error(f"Failed to calculate checksum for {file_path}: {e}")
+            raise FileTransferError(
+                ErrorCode.E003_FILE_NOT_FOUND,
+                f"Cannot read file for checksum: {e}",
+                {"path": str(file_path)},
+            ) from e
 
     def encrypt_chunk(self, chunk_data: bytes, chunk_number: int) -> bytes:
-        """Encrypt a file chunk.
+        """Encrypt a file chunk with cryptographically secure random nonce.
+
+        Security: Uses secrets.token_bytes() to generate a cryptographically
+        secure random nonce for each chunk, preventing nonce reuse attacks.
+        The nonce is prepended to the ciphertext for transmission.
 
         Args:
             chunk_data: Raw chunk data
-            chunk_number: Chunk sequence number
+            chunk_number: Chunk sequence number (for logging only)
 
         Returns:
             Encrypted chunk data (nonce + ciphertext)
@@ -196,23 +215,23 @@ class FileTransferSession:
         try:
             cipher = ChaCha20Poly1305(self.encryption_key)
 
-            # Use chunk number as part of the nonce to ensure uniqueness
-            nonce = hashlib.sha256(
-                self.transfer_id.encode() + chunk_number.to_bytes(8, "big")
-            ).digest()[:NONCE_SIZE]
+            # Generate cryptographically secure random nonce
+            # SECURITY: Never reuse nonces with the same key
+            nonce = secrets.token_bytes(NONCE_SIZE)
 
-            # Encrypt chunk
+            # Encrypt chunk with authenticated encryption
             ciphertext = cipher.encrypt(nonce, chunk_data, None)
 
-            # Return nonce + ciphertext
+            # Return nonce + ciphertext (nonce is transmitted with ciphertext)
             return nonce + ciphertext
 
         except Exception as e:
+            logger.error(f"Chunk {chunk_number} encryption failed: {e}")
             raise FileTransferError(
                 ErrorCode.E602_CHUNK_FAILED,
                 f"Chunk encryption failed: {e}",
                 {"chunk": chunk_number, "error": str(e)},
-            )
+            ) from e
 
     def decrypt_chunk(self, encrypted_data: bytes, chunk_number: int) -> bytes:
         """Decrypt a file chunk.
@@ -225,26 +244,37 @@ class FileTransferSession:
             Decrypted chunk data
 
         Raises:
-            FileTransferError: If decryption fails
+            FileTransferError: If decryption fails or authentication fails
         """
         try:
+            # Validate encrypted data length
             if len(encrypted_data) < NONCE_SIZE:
-                raise FileTransferError(ErrorCode.E606_INVALID_CHUNK, "Encrypted data too short")
+                raise FileTransferError(
+                    ErrorCode.E606_INVALID_CHUNK,
+                    f"Encrypted data too short: {len(encrypted_data)} < {NONCE_SIZE}",
+                    {"chunk": chunk_number, "size": len(encrypted_data)},
+                )
 
+            # Extract nonce and ciphertext
             nonce = encrypted_data[:NONCE_SIZE]
             ciphertext = encrypted_data[NONCE_SIZE:]
 
+            # Decrypt and authenticate
             cipher = ChaCha20Poly1305(self.encryption_key)
             plaintext = cipher.decrypt(nonce, ciphertext, None)
 
             return plaintext
 
+        except FileTransferError:
+            raise
         except Exception as e:
+            # Authentication failure or other decryption error
+            logger.error(f"Chunk {chunk_number} decryption failed: {e}")
             raise FileTransferError(
                 ErrorCode.E602_CHUNK_FAILED,
-                f"Chunk decryption failed: {e}",
+                f"Chunk decryption failed (possible tampering): {e}",
                 {"chunk": chunk_number, "error": str(e)},
-            )
+            ) from e
 
     async def send_file(
         self, file_path: Path, send_callback: Callable[[ChunkInfo], asyncio.Future]
@@ -299,7 +329,8 @@ class FileTransferSession:
                             if retry_count >= FILE_TRANSFER_RETRY_ATTEMPTS:
                                 raise FileTransferError(
                                     ErrorCode.E604_TRANSFER_TIMEOUT,
-                                    f"Chunk {chunk_num} send timeout after retries",
+                                    f"Chunk {chunk_num} send timeout after {retry_count} retries",
+                                    {"chunk": chunk_num, "retries": retry_count},
                                 )
                             logger.warning(f"Chunk {chunk_num} timeout, retry {retry_count}")
                             await asyncio.sleep(FILE_TRANSFER_RETRY_DELAY)
@@ -314,16 +345,26 @@ class FileTransferSession:
                     logger.debug(f"Sent chunk {chunk_num + 1}/{metadata.total_chunks}")
 
             elapsed = time.time() - self.start_time
-            logger.info(f"File transfer completed: {metadata.filename} " f"in {elapsed:.2f}s")
+            logger.info(f"File transfer completed: {metadata.filename} in {elapsed:.2f}s")
 
             return True
 
         except FileTransferError:
             raise
-        except Exception as e:
+        except OSError as e:
+            logger.error(f"I/O error during file transfer: {e}")
             raise FileTransferError(
-                ErrorCode.E600_FILE_TRANSFER_ERROR, f"File transfer failed: {e}", {"error": str(e)}
-            )
+                ErrorCode.E600_FILE_TRANSFER_ERROR,
+                f"File read error: {e}",
+                {"path": str(file_path), "error": str(e)},
+            ) from e
+        except Exception as e:
+            logger.error(f"Unexpected error during file transfer: {e}", exc_info=True)
+            raise FileTransferError(
+                ErrorCode.E600_FILE_TRANSFER_ERROR,
+                f"File transfer failed: {e}",
+                {"error": str(e)},
+            ) from e
 
     def receive_chunk(self, chunk_info: ChunkInfo) -> None:
         """Receive and store a file chunk.

@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **CRITICAL:** Fixed nonce reuse vulnerability in file transfer encryption (file_transfer.py)
+  - Replaced deterministic hash-based nonce generation with cryptographically secure random nonces using secrets.token_bytes()
+  - Prevents catastrophic nonce reuse attacks in ChaCha20Poly1305 encryption
+  - Each file chunk now uses a unique random nonce
+- **CRITICAL:** Complete redesign of session management system with encryption and expiration (session.py)
+  - Sessions now encrypted with AES-256-GCM using master password-derived key
+  - Added HMAC-SHA256 integrity verification for tamper detection
+  - Implemented automatic session expiration (7-day absolute timeout, 24-hour idle timeout)
+  - Sessions validated on load with expiration and integrity checks
+  - Replaced insecure plaintext JSON storage with encrypted binary format
+
+### Fixed
+- Fixed file transfer encryption to use secrets module for cryptographically secure nonce generation
+- Fixed silent exception swallowing in session management preventing error detection
+- Added proper error handling and logging to file transfer operations
+- Added OSError-specific exception handling for file I/O operations in file transfer
+- Session manager now uses atomic file writes (temp file + rename) to prevent corruption
+
+### Changed
+- File transfer nonce generation now uses secrets.token_bytes() instead of deterministic hashing
+- Session storage migrated from plaintext JSON to AES-256-GCM encrypted format with HMAC
+- Session tokens now generated using secrets.token_urlsafe() for improved security
+- Enhanced exception handling in file transfer with proper error propagation using 'from e' syntax
+- Improved logging throughout file transfer and session management modules
+
+### Added
+- Atomic file writes in session manager to prevent data corruption during crashes
+- Session expiration mechanism with configurable absolute and idle timeouts
+- Session revocation API for disabling compromised sessions
+- HMAC-based integrity verification for encrypted session files
+- Cleanup method for removing expired sessions
+- Enhanced file transfer error messages with context and troubleshooting information
+
 ## [2.4.0] - 2025-11-08
 
 ### Security
