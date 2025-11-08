@@ -1590,3 +1590,19 @@ class NetworkManager:
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
             self.connections.clear()
+
+    def get_connection_metrics(self, uid: str) -> Optional[Dict[str, Any]]:
+        """
+        Get connection metrics for a specific peer.
+
+        Args:
+            uid: UID of the peer
+
+        Returns:
+            Dictionary with connection metrics, or None if not connected
+        """
+        connection = self.connections.get(uid)
+        if not connection or not connection.metrics:
+            return None
+
+        return connection.metrics.get_statistics()

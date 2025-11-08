@@ -76,6 +76,13 @@ Jarvis relies on the following free and open-source software (FOSS) dependencies
 - **Upstream**: https://github.com/lincolnloop/python-qrcode
 - **Website**: https://github.com/lincolnloop/python-qrcode
 
+### pyzbar
+- **License**: MIT
+- **Description**: Read one-dimensional barcodes and QR codes from Python
+- **Upstream**: https://github.com/NaturalHistoryMuseum/pyzbar
+- **Website**: https://github.com/NaturalHistoryMuseum/pyzbar
+- **Note**: Python wrapper for ZBar barcode library
+
 ### Pillow
 - **License**: HPND (Historical Permission Notice and Disclaimer) / PIL License
 - **Description**: Python Imaging Library (PIL Fork)
@@ -120,7 +127,7 @@ Jarvis relies on the following free and open-source software (FOSS) dependencies
 
 All dependencies are free and open-source software (FOSS) with permissive licenses:
 
-- **MIT**: textual, rich, argon2-cffi, liboqs-python, tomli, validators, pystun3, sounddevice
+- **MIT**: textual, rich, argon2-cffi, liboqs-python, tomli, validators, pystun3, pyzbar, sounddevice
 - **Apache-2.0**: cryptography (dual), aiofiles
 - **BSD-3-Clause**: pyperclip, zstandard, qrcode, soundfile, miniupnpc, cryptography (dual)
 - **LGPL-2.1**: zeroconf

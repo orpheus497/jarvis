@@ -39,6 +39,7 @@ dependencies = [
     "liboqs-python>=0.11.0",
     "qrcode>=8.0",
     "pillow>=10.0.0",
+    "pyzbar>=0.1.9",
     "sounddevice>=0.5.1",
     "soundfile>=0.12.1",
     "miniupnpc>=2.2.4",

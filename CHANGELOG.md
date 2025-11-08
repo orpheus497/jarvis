@@ -7,7 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2025-11-08
+
 ### Added
+- **QR Code Scanning:** Complete implementation of QR code scanning from image files using pyzbar library
+- pyzbar>=0.1.9 dependency for QR code decoding functionality
+- scan_qr_code() function in qr_code.py with support for PNG, JPG, and other image formats
+- Automatic detection and decoding of multiple QR codes in single image (uses first valid code)
+- Comprehensive error handling for missing files, invalid images, and decode failures
+- **Kademlia DHT Implementation:** Full Kademlia-based distributed hash table for internet peer discovery
+- KBucket class implementing k-bucket routing table with contact management
+- 160-bit ID space using SHA-1 for Kademlia standard compatibility
+- XOR distance metric for node proximity calculation
+- Local storage with automatic expiration (24-hour TTL)
+- Periodic maintenance loop for cleaning expired DHT entries
+- Bootstrap node support for network joining
+- Announce and find_peer methods with local caching
+- Comprehensive DHT statistics (total contacts, bucket utilization, storage size)
+- **DHT Network RPCs:** Complete network communication layer for Kademlia DHT
+- RPC server listening on configurable port (default 6881) for DHT operations
+- PING RPC for node liveness checking
+- STORE RPC for storing key-value pairs on remote nodes
+- FIND_NODE RPC for discovering closest nodes to target ID
+- FIND_VALUE RPC for iterative value lookup across DHT
+- Iterative lookups with concurrent queries (ALPHA=3 parameter)
+- Bootstrap process with automatic peer discovery
+- RPC statistics tracking (ping, store, find_node, find_value counts)
+- Network announce with distribution to K closest nodes
+- Comprehensive error handling and timeouts for all RPCs
+- **Advanced Metrics Visualization:** ASCII-based charts and graphs for terminal display
+- BarChart widget for visualizing metric distributions with horizontal bars
+- SparklineChart widget for showing metric trends over time
+- GaugeChart widget for displaying percentage-based metrics
+- Automatic value scaling and formatting (K/M suffixes)
+- Support for multiple data series in charts
+- Visual quality indicators based on metric thresholds
+- Real-time chart updates with data refresh methods
+- **Connection Metrics Integration:** NetworkManager.get_connection_metrics() method for retrieving per-peer connection statistics
+- Connection metrics now properly displayed in UI statistics dashboard
+- Latency, throughput, packet loss, and quality indicators available per contact
+- Graceful handling of unavailable metrics with status indicators
 - **Connection Pooling:** ConnectionPool and ConnectionPoolEntry classes in network.py implementing connection reuse, health checking, idle timeout, and automatic connection recycling for network efficiency
 - Connection pool configuration constants in constants.py: CONNECTION_POOL_MAX_SIZE (50), CONNECTION_POOL_MIN_SIZE (5), CONNECTION_IDLE_TIMEOUT (300s), CONNECTION_HEALTH_CHECK_INTERVAL (60s), CONNECTION_REUSE_THRESHOLD (100)
 - ConnectionPool health check background task with automatic removal of unhealthy and idle connections
@@ -23,12 +62,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Advanced Configuration Guide:** Comprehensive docs/CONFIGURATION.md with TOML configuration, environment variables, performance tuning, troubleshooting, and scenario-specific configurations
 
 ### Changed
+- scan_qr_code() in qr_code.py now fully functional (replaced placeholder implementation)
+- SimpleDHT class upgraded from placeholder to full Kademlia implementation with routing table, storage, and network RPCs
+- DHT announce() now distributes peer information to K closest nodes via STORE RPC
+- DHT find_peer() now performs iterative lookups across network using FIND_VALUE RPC
+- DHT start() now launches RPC server and bootstrap process with automatic peer discovery
+- UI statistics dashboard now retrieves actual connection metrics instead of placeholder zeros
+- Connection status indicators enhanced to show "disconnected" or "metrics_unavailable" when data not available
+- Statistics displays can now include visual charts (bar charts, sparklines, gauges) for better data comprehension
 - NetworkManager now initializes ConnectionPool instance for managing P2P connections
 - NetworkManager.start_server() now starts connection pool health checks automatically
 - NetworkManager.stop_server() now stops connection pool health checks and clears pool on shutdown
 - MessageSearchEngine.__init__() now accepts enable_cache parameter (default: True) to control result caching
 - MessageSearchEngine.search() now checks cache before database query and stores results in cache after query
 - All search methods (search, search_by_contact, search_by_date) now benefit from automatic result caching
+
+### Dependencies
+- Added pyzbar>=0.1.9 (MIT license) for QR code scanning from image files
 
 ## [2.2.0] - 2025-11-08
 

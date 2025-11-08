@@ -23,6 +23,9 @@ zstandard>=0.23.0
 sounddevice>=0.5.1
 soundfile>=0.12.1
 
+# QR Code Scanning
+pyzbar>=0.1.9
+
 # Internet Connectivity
 miniupnpc>=2.2.4
 pystun3>=1.0.0
