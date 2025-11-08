@@ -156,7 +156,25 @@ class JarvisServer:
         self.message_callbacks = []
         
     async def start(self) -> bool:
-        """Start the server."""
+        """
+        Start the Jarvis server daemon.
+
+        Initializes the IPC server for client communication, sets up signal
+        handlers for graceful shutdown, and creates the PID file for process
+        tracking. The server listens on localhost for UI client connections.
+
+        Returns:
+            True if server started successfully, False if already running or on error
+
+        Raises:
+            No exceptions raised - all errors are caught and logged
+
+        Note:
+            - Checks for existing server instance via PID file
+            - Uses platform-specific signal handling (SIGTERM/SIGBREAK)
+            - Creates IPC server on 127.0.0.1:ipc_port
+            - Logs startup information including PID and data directory
+        """
         try:
             # Check if server is already running
             if self._is_server_running():
@@ -195,8 +213,24 @@ class JarvisServer:
             self._cleanup()
             return False
     
-    async def stop(self):
-        """Stop the server."""
+    async def stop(self) -> None:
+        """
+        Stop the Jarvis server daemon gracefully.
+
+        Performs orderly shutdown by disconnecting all clients, stopping the
+        IPC server, disconnecting from network peers, and cleaning up resources
+        including the PID file.
+
+        Raises:
+            No exceptions raised - all errors are caught and logged
+
+        Note:
+            - Disconnects all connected UI clients
+            - Stops the IPC server
+            - Closes all P2P network connections
+            - Removes PID file
+            - Does not raise exceptions on cleanup errors
+        """
         logger.info("Stopping server...")
         self.running = False
         
@@ -225,8 +259,21 @@ class JarvisServer:
         
         logger.info("Server stopped")
     
-    async def run(self):
-        """Run server main loop."""
+    async def run(self) -> None:
+        """
+        Run the server main event loop.
+
+        Maintains the server running state and handles graceful shutdown on
+        KeyboardInterrupt. This method blocks until the server is stopped.
+
+        Raises:
+            No exceptions raised - KeyboardInterrupt is caught and handled
+
+        Note:
+            - Sleeps in 1-second intervals while running
+            - Handles Ctrl+C gracefully via KeyboardInterrupt
+            - Calls stop() on exit for cleanup
+        """
         try:
             while self.running:
                 await asyncio.sleep(1)
@@ -235,8 +282,25 @@ class JarvisServer:
         finally:
             await self.stop()
     
-    async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        """Handle client connection."""
+    async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        """
+        Handle incoming UI client connection.
+
+        Manages the lifecycle of a UI client connection, including registration,
+        command processing, and cleanup. Each client connection runs in its own
+        asyncio task.
+
+        Args:
+            reader: Asyncio stream reader for receiving client commands
+            writer: Asyncio stream writer for sending responses to client
+
+        Note:
+            - Assigns unique client ID for tracking
+            - Reads newline-delimited JSON commands
+            - Processes commands via _process_command()
+            - Handles disconnection and cleanup automatically
+            - All errors are caught and logged
+        """
         address = writer.get_extra_info('peername')
         logger.debug(f"Client connected from {address}")
         
@@ -296,7 +360,24 @@ class JarvisServer:
                 logger.debug(f"Error closing writer: {e}")
     
     async def _process_command(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Process client command and return response."""
+        """
+        Process incoming command from UI client.
+
+        Routes commands to appropriate handler methods based on command type.
+        All commands follow a request-response pattern with JSON serialization.
+
+        Args:
+            request: Command request dictionary with 'command' and 'params' keys
+
+        Returns:
+            Response dictionary with 'success' key and command-specific data
+
+        Note:
+            - Commands are defined in ServerCommand class
+            - All handlers return Dict[str, Any] with at least 'success': bool
+            - Errors are caught and returned as {'success': False, 'error': str}
+            - See ServerCommand class for available commands
+        """
         command = request.get('command')
         params = request.get('params', {})
         
@@ -425,7 +506,32 @@ class JarvisServer:
             }
     
     async def _handle_login(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle login command."""
+        """
+        Handle user login authentication.
+
+        Authenticates user with password, loads identity and initializes all
+        managers (contacts, messages, groups, network, search, etc.). This is
+        the first command that must be called before any other operations.
+
+        Args:
+            params: Dictionary containing 'password' key
+
+        Returns:
+            Success response with identity info, or error response:
+            {
+                'success': bool,
+                'identity': {'uid': str, 'username': str, ...} or None,
+                'error': str (if failed)
+            }
+
+        Note:
+            - Verifies password against encrypted identity file
+            - Initializes all manager instances on success
+            - Starts P2P network server
+            - Connects to all known contacts
+            - Sets up group memberships
+            - Initializes message queue and search engine
+        """
         password = params.get('password')
         
         if not password:
@@ -564,7 +670,31 @@ class JarvisServer:
             return {'success': False, 'error': str(e)}
     
     async def _handle_send_message(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle send message command."""
+        """
+        Send encrypted message to contact.
+
+        Encrypts and sends a message to a contact via the P2P network. Messages
+        are encrypted using the Double Ratchet algorithm with forward secrecy.
+
+        Args:
+            params: Dictionary with required keys:
+                - contact_uid (str): Recipient contact's unique ID
+                - content (str): Message content to send
+
+        Returns:
+            Success/error response:
+            {
+                'success': bool,
+                'message_id': str (if successful),
+                'error': str (if failed)
+            }
+
+        Note:
+            - Encrypts message using Double Ratchet
+            - Queues message if contact offline
+            - Returns immediately (send is async)
+            - Message stored in local history
+        """
         if not self.network_manager:
             return {'success': False, 'error': 'Not logged in'}
         
@@ -1066,7 +1196,39 @@ class JarvisServer:
 
     # File transfer handlers
     async def _handle_send_file(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle file transfer initiation using FileTransferSession."""
+        """
+        Initiate encrypted file transfer to contact.
+
+        Creates a file transfer session with chunking, encryption, and progress
+        tracking. Files are encrypted with ChaCha20-Poly1305 and sent in chunks
+        for efficient transfer of large files.
+
+        Args:
+            params: Dictionary with required keys:
+                - contact_uid (str): Recipient contact's unique ID
+                - file_path (str): Path to file to send
+
+        Returns:
+            Success response with transfer info, or error response:
+            {
+                'success': bool,
+                'transfer_id': str (UUID),
+                'filename': str,
+                'size': int (bytes),
+                'chunks': int (total chunk count),
+                'message': str,
+                'error': str (if failed)
+            }
+
+        Note:
+            - Validates file exists and is readable
+            - Validates contact exists
+            - Generates unique transfer ID (UUID)
+            - Creates 32-byte encryption key for ChaCha20Poly1305
+            - Chunks file using FILE_CHUNK_SIZE
+            - Tracks progress via FileTransferSession
+            - Returns immediately - actual transfer is async
+        """
         try:
             contact_uid = params.get('contact_uid')
             file_path_str = params.get('file_path')
@@ -1203,7 +1365,49 @@ class JarvisServer:
 
     # Search handlers
     async def _handle_search_messages(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Search messages using full-text search engine."""
+        """
+        Search messages using SQLite FTS5 full-text search.
+
+        Performs full-text search across all messages with support for filters,
+        pagination, and result highlighting. Uses SQLite FTS5 virtual tables for
+        efficient searching.
+
+        Args:
+            params: Dictionary with keys:
+                - query (str): Search query (supports FTS5 syntax)
+                - contact_uid (str, optional): Filter by specific contact
+                - group_id (str, optional): Filter by specific group
+                - start_date (int, optional): Filter by start timestamp
+                - end_date (int, optional): Filter by end timestamp
+                - limit (int, optional): Max results (default 50)
+                - offset (int, optional): Pagination offset (default 0)
+
+        Returns:
+            Success response with search results, or error response:
+            {
+                'success': bool,
+                'results': [
+                    {
+                        'message_id': str,
+                        'sender': str,
+                        'recipient': str,
+                        'content': str,
+                        'timestamp': int,
+                        'snippet': str (highlighted match)
+                    }, ...
+                ],
+                'count': int (number of results),
+                'query': str (original query),
+                'error': str (if failed)
+            }
+
+        Note:
+            - Requires login (search_engine must be initialized)
+            - Query supports FTS5 syntax (AND, OR, NOT, phrases)
+            - Results include snippet with <mark> tags for highlights
+            - Results ordered by relevance then timestamp
+            - Maximum results limited by SEARCH_MAX_RESULTS
+        """
         try:
             if not self.search_engine:
                 return {
