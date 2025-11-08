@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2025-11-08
+
 ### Security
 - **CRITICAL:** Fixed nonce reuse vulnerability in file transfer encryption (file_transfer.py)
   - Replaced deterministic hash-based nonce generation with cryptographically secure random nonces using secrets.token_bytes()
