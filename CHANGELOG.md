@@ -39,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed deprecated asyncio.get_event_loop() calls (replaced with time.time())
   - Added exception handler for unreferenced async state change callback tasks
   - Prevents silent task exception loss and improves error visibility
+- **MEDIUM:** Fixed path traversal vulnerability in backup restoration (backup.py)
+  - Added _safe_extract() method to validate tar members before extraction
+  - Prevents malicious backups from extracting files outside target directory (CWE-22)
+  - Validates all member paths against extraction directory
+  - Rejects absolute paths and parent directory references
+- **MEDIUM:** Strengthened backup encryption key derivation (backup.py)
+  - Increased PBKDF2-HMAC-SHA256 iterations from 100,000 to 600,000
+  - Meets OWASP 2023 recommendations (exceeds NIST minimum of 210,000)
+  - Provides stronger protection against brute-force attacks on backup passwords
 
 ### Fixed
 - Fixed file transfer encryption to use secrets module for cryptographically secure nonce generation
@@ -75,6 +84,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added exception handler callback to state change notification tasks
   - Prevents silent loss of exceptions in async callbacks
   - Added _handle_callback_exception method for proper error logging
+- Fixed path traversal vulnerability in backup restoration (backup.py)
+  - tar.extractall() now replaced with validated extraction
+  - Added _safe_extract() method to check all tar member paths
+  - Prevents CWE-22 (Improper Limitation of a Pathname to a Restricted Directory)
+  - Rejects dangerous paths containing ".." or absolute paths
 - Added proper error handling and logging to file transfer operations
 - Added OSError-specific exception handling for file I/O operations in file transfer
 - Session manager now uses atomic file writes (temp file + rename) to prevent corruption
@@ -94,6 +108,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Network layer timing now uses time.time() instead of deprecated asyncio.get_event_loop().time()
 - Network layer writer cleanup now uses specific exception types instead of bare except
 - Connection state callbacks now properly track and log async task exceptions
+- Backup restoration now uses validated extraction instead of direct tar.extractall()
+- Backup PBKDF2 key derivation increased from 100,000 to 600,000 iterations
 
 ### Added
 - Atomic file writes in session manager to prevent data corruption during crashes
@@ -108,6 +124,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced logging throughout ratchet, crypto, and utils modules
 - Exception handler callback (_handle_callback_exception) for async state change notifications in network layer
 - Debug logging for network writer cleanup failures
+- Path traversal protection via _safe_extract() method in backup restoration
+- Validation for tar member paths to prevent directory escape attacks
 
 ### Performance
 - Reduced memory usage in Double Ratchet by removing expired skip keys automatically

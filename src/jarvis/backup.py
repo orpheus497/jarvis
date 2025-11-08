@@ -11,6 +11,7 @@ Version: 2.3.0
 
 import asyncio
 import logging
+import os
 import tarfile
 from datetime import datetime
 from pathlib import Path
@@ -226,20 +227,23 @@ class BackupManager:
             )
 
     def _derive_key(self, password: str, salt: bytes) -> bytes:
-        """Derive encryption key from password.
+        """Derive encryption key from password using PBKDF2-HMAC-SHA256.
+
+        Uses 600,000 iterations to meet modern security standards (OWASP 2023).
+        This exceeds NIST's minimum recommendation of 210,000 iterations.
 
         Args:
             password: User password
             salt: Random salt
 
         Returns:
-            Derived key
+            Derived key (32 bytes)
         """
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=KEY_SIZE,
             salt=salt,
-            iterations=100000,
+            iterations=600000,  # OWASP 2023 recommendation
         )
         return kdf.derive(password.encode())
 
@@ -262,6 +266,46 @@ class BackupManager:
         import secrets
 
         return secrets.token_bytes(NONCE_SIZE)
+
+    def _safe_extract(self, tar: tarfile.TarFile, path: Path) -> None:
+        """Safely extract tar members with path traversal protection.
+
+        Validates each member to ensure it doesn't escape the target directory.
+        Prevents path traversal attacks (CWE-22).
+
+        Args:
+            tar: Tarfile object to extract from
+            path: Target extraction directory
+
+        Raises:
+            JarvisError: If a member contains a dangerous path
+        """
+        # Resolve absolute path of extraction directory
+        extract_dir = os.path.abspath(path)
+
+        for member in tar.getmembers():
+            # Resolve the absolute path where this member would be extracted
+            member_path = os.path.abspath(os.path.join(extract_dir, member.name))
+
+            # Ensure the member path is within the extraction directory
+            if not member_path.startswith(extract_dir + os.sep) and member_path != extract_dir:
+                raise JarvisError(
+                    ErrorCode.E002_INVALID_ARGUMENT,
+                    f"Path traversal detected in backup: {member.name}",
+                    {"member": member.name, "resolved_path": member_path},
+                )
+
+            # Additional validation: reject absolute paths and parent references
+            if member.name.startswith("/") or ".." in member.name.split(os.sep):
+                raise JarvisError(
+                    ErrorCode.E002_INVALID_ARGUMENT,
+                    f"Dangerous path in backup: {member.name}",
+                    {"member": member.name},
+                )
+
+        # All members validated, safe to extract
+        tar.extractall(path=path)
+        logger.debug(f"Safely extracted {len(tar.getmembers())} members")
 
     def restore_backup(self, backup_path: Path, password: Optional[str] = None) -> None:
         """Restore from a backup file.
@@ -294,10 +338,10 @@ class BackupManager:
             else:
                 extract_file = backup_path
 
-            # Extract tar.gz
+            # Extract tar.gz with path traversal protection
             with tarfile.open(extract_file, "r:gz") as tar:
-                # Extract to data directory
-                tar.extractall(path=self.data_dir)
+                # Validate and extract members safely to prevent path traversal
+                self._safe_extract(tar, self.data_dir)
                 logger.info("Backup extracted successfully")
 
             # Clean up temp files
