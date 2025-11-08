@@ -1807,11 +1807,19 @@ class JarvisApp(App):
                     metrics = self.network_manager.get_connection_metrics(contact.uid)
                     if metrics:
                         contact_stats[contact.username] = metrics
+                    else:
+                        # No metrics available (not connected or no data yet)
+                        contact_stats[contact.username] = {
+                            "latency": {"average_ms": None},
+                            "packets": {"sent": 0, "received": 0},
+                            "status": "disconnected",
+                        }
                 else:
-                    # Placeholder stats
+                    # Network manager doesn't support metrics
                     contact_stats[contact.username] = {
-                        "latency": {"average_ms": 0},
+                        "latency": {"average_ms": None},
                         "packets": {"sent": 0, "received": 0},
+                        "status": "metrics_unavailable",
                     }
 
             return overall_stats, contact_stats

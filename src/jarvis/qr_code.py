@@ -38,6 +38,14 @@ except ImportError:
     PIL_AVAILABLE = False
     logger.warning("pillow not available - PNG export disabled")
 
+try:
+    from pyzbar import pyzbar
+
+    PYZBAR_AVAILABLE = True
+except ImportError:
+    PYZBAR_AVAILABLE = False
+    logger.warning("pyzbar not available - QR code scanning disabled")
+
 
 def generate_qr_code(
     data: str, error_correction: str = "M", box_size: int = 10, border: int = 4
@@ -298,23 +306,82 @@ def is_qr_available() -> bool:
 def scan_qr_code(image_path: Path) -> str:
     """Scan and decode QR code from image file.
 
-    Note: This is a placeholder for future QR code scanning functionality.
-    Would require additional dependencies like opencv-python or pyzbar.
+    Uses pyzbar library to decode QR codes from PNG, JPG, and other image formats.
+    Supports multiple QR codes in a single image (returns first valid one).
 
     Args:
         image_path: Path to image containing QR code
 
     Returns:
-        Decoded QR code data
+        Decoded QR code data as string
 
     Raises:
-        JarvisError: Not implemented
+        JarvisError: If scanning is not available, file not found, or decode fails
     """
-    raise JarvisError(
-        ErrorCode.E001_UNKNOWN_ERROR,
-        "QR code scanning not yet implemented. "
-        "Contact data can be imported manually or via file.",
-    )
+    if not PYZBAR_AVAILABLE:
+        raise JarvisError(
+            ErrorCode.E001_UNKNOWN_ERROR,
+            "QR code scanning not available - install pyzbar library",
+        )
+
+    if not PIL_AVAILABLE:
+        raise JarvisError(
+            ErrorCode.E001_UNKNOWN_ERROR,
+            "QR code scanning requires pillow library for image loading",
+        )
+
+    # Validate image path
+    if not image_path.exists():
+        raise JarvisError(
+            ErrorCode.E002_INVALID_ARGUMENT,
+            f"Image file not found: {image_path}",
+            {"path": str(image_path)},
+        )
+
+    try:
+        # Load image using PIL
+        image = Image.open(image_path)
+        logger.debug(f"Loaded image: {image_path} ({image.size[0]}x{image.size[1]})")
+
+        # Decode QR codes from image
+        decoded_objects = pyzbar.decode(image)
+
+        # Check if any QR codes were found
+        if not decoded_objects:
+            raise JarvisError(
+                ErrorCode.E001_UNKNOWN_ERROR,
+                "No QR code found in image",
+                {"path": str(image_path)},
+            )
+
+        # Extract data from first QR code
+        qr_data = decoded_objects[0].data.decode("utf-8")
+        logger.info(
+            f"Successfully decoded QR code from {image_path.name}: {len(qr_data)} bytes"
+        )
+
+        # Log additional QR codes if present
+        if len(decoded_objects) > 1:
+            logger.info(
+                f"Found {len(decoded_objects)} QR codes in image, using first one"
+            )
+
+        return qr_data
+
+    except JarvisError:
+        raise
+    except UnicodeDecodeError as e:
+        raise JarvisError(
+            ErrorCode.E001_UNKNOWN_ERROR,
+            f"QR code contains invalid text encoding: {e}",
+            {"error": str(e), "path": str(image_path)},
+        )
+    except Exception as e:
+        raise JarvisError(
+            ErrorCode.E001_UNKNOWN_ERROR,
+            f"Failed to scan QR code: {e}",
+            {"error": str(e), "path": str(image_path)},
+        )
 
 
 # Example usage function
