@@ -148,6 +148,23 @@ CONNECTION_LIMIT_PER_IP = 3
 RATE_LIMIT_INTERNET_MESSAGES_PER_MINUTE = 30  # Stricter for internet
 RATE_LIMIT_INTERNET_CONNECTIONS_PER_MINUTE = 2
 
+# Connection Pooling Constants
+CONNECTION_POOL_MAX_SIZE = 50  # Maximum number of connections to maintain
+CONNECTION_POOL_MIN_SIZE = 5  # Minimum number of connections to keep alive
+CONNECTION_IDLE_TIMEOUT = 300  # 5 minutes before recycling idle connection
+CONNECTION_HEALTH_CHECK_INTERVAL = 60  # 1 minute health check frequency
+CONNECTION_REUSE_THRESHOLD = 100  # Maximum reuses before forced refresh
+
+# Message Batch Processing Constants
+MESSAGE_BATCH_SIZE = 100  # Maximum messages per batch
+MESSAGE_BATCH_TIMEOUT = 1.0  # 1 second max wait for batch
+MESSAGE_BATCH_QUEUE_SIZE = 1000  # Maximum queued messages
+
+# Search Cache Constants
+SEARCH_CACHE_MAX_SIZE = 1000  # Maximum cached queries
+SEARCH_CACHE_TTL = 300  # 5 minutes cache lifetime
+SEARCH_CACHE_CLEANUP_INTERVAL = 60  # 1 minute cleanup frequency
+
 # Feature Flags
 FEATURE_DOUBLE_RATCHET = True
 FEATURE_FILE_TRANSFER = True
@@ -158,3 +175,6 @@ FEATURE_NAT_TRAVERSAL = True  # v2.1.0
 FEATURE_PEER_DISCOVERY = True  # v2.1.0
 FEATURE_MESSAGE_QUEUE = True  # v2.1.0
 FEATURE_ENHANCED_SECURITY = True  # v2.1.0
+FEATURE_CONNECTION_POOLING = True  # Connection pooling improvements
+FEATURE_MESSAGE_BATCHING = True  # Message batch processing
+FEATURE_SEARCH_CACHING = True  # Search result caching

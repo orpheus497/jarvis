@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Connection Pooling:** ConnectionPool and ConnectionPoolEntry classes in network.py implementing connection reuse, health checking, idle timeout, and automatic connection recycling for network efficiency
+- Connection pool configuration constants in constants.py: CONNECTION_POOL_MAX_SIZE (50), CONNECTION_POOL_MIN_SIZE (5), CONNECTION_IDLE_TIMEOUT (300s), CONNECTION_HEALTH_CHECK_INTERVAL (60s), CONNECTION_REUSE_THRESHOLD (100)
+- ConnectionPool health check background task with automatic removal of unhealthy and idle connections
+- Connection reuse tracking and statistics (total_connections, healthy_connections, idle_connections, average_reuse_count)
+- **Search Result Caching:** SearchResultCache class in search.py implementing LRU cache with TTL expiration for search query results
+- Search cache configuration constants in constants.py: SEARCH_CACHE_MAX_SIZE (1000), SEARCH_CACHE_TTL (300s), SEARCH_CACHE_CLEANUP_INTERVAL (60s)
+- LRU eviction policy in search cache with automatic removal of oldest entries when max size reached
+- TTL-based expiration with automatic cleanup of expired cache entries
+- Cache statistics tracking (hits, misses, hit_rate, size, max_size, ttl)
+- get_cache_statistics() and clear_cache() methods in MessageSearchEngine for cache management
+- **Performance Features:** Feature flags in constants.py for connection pooling (FEATURE_CONNECTION_POOLING), message batching (FEATURE_MESSAGE_BATCHING), and search caching (FEATURE_SEARCH_CACHING)
+- **API Reference Documentation:** Complete docs/API.md covering all modules, classes, and functions with usage examples and parameter documentation
+- **Advanced Configuration Guide:** Comprehensive docs/CONFIGURATION.md with TOML configuration, environment variables, performance tuning, troubleshooting, and scenario-specific configurations
+
+### Changed
+- NetworkManager now initializes ConnectionPool instance for managing P2P connections
+- NetworkManager.start_server() now starts connection pool health checks automatically
+- NetworkManager.stop_server() now stops connection pool health checks and clears pool on shutdown
+- MessageSearchEngine.__init__() now accepts enable_cache parameter (default: True) to control result caching
+- MessageSearchEngine.search() now checks cache before database query and stores results in cache after query
+- All search methods (search, search_by_contact, search_by_date) now benefit from automatic result caching
+
 ## [2.2.0] - 2025-11-08
 
 ### Fixed
