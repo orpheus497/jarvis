@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Fixed critical command injection vulnerability in notification system (notification.py)
+- Notification system now sanitizes all user-supplied input before shell command construction
+- macOS notifications sanitize input for AppleScript safety
+- Windows notifications sanitize input for PowerShell and XML safety
+- Linux and Termux notifications validate input parameters
+- Replaced SHA-1 with SHA-256 (truncated to 160 bits) in Kademlia DHT node ID generation (discovery.py)
+- Added comprehensive input sanitization system to prevent injection attacks across all modules
+
+### Fixed
+- Version inconsistency resolved: pyproject.toml synchronized to version 2.3.0
+- Version inconsistency resolved: init.py updated from 1.0.0 to 2.3.0
+- Notification system injection vulnerabilities patched with input validation and sanitization
+
+### Added
+- New sanitization module (sanitization.py) with comprehensive input validation
+- Input sanitization for shell commands preventing command injection attacks
+- Input sanitization for AppleScript preventing script injection
+- Input sanitization for XML/HTML preventing markup injection
+- Input sanitization for terminal display preventing ANSI escape sequence attacks
+- Timeout parameters added to all subprocess calls to prevent hanging operations
+- Logging statements added to notification system for production debugging
+- Optional dependency groups in pyproject.toml for voice and QR features
+- Voice dependencies (sounddevice, soundfile) now installable via `pip install jarvis-messenger[voice]`
+- QR dependencies (pyzbar) now installable via `pip install jarvis-messenger[qr]`
+- All features installable via `pip install jarvis-messenger[all]`
+
 ### Changed
 - Application version synchronized to 2.3.0 across all module docstrings
 - Protocol version updated from 2.1 to 2.3 for consistency with application version

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jarvis-messenger"
-version = "2.1.0"
+version = "2.3.0"
 description = "Terminal-based peer-to-peer end-to-end encrypted messenger with internet connectivity"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -47,6 +47,20 @@ dependencies = [
     "zeroconf>=0.131.0",
     "validators>=0.22.0",
     "aiofiles>=23.2.1",
+]
+
+[project.optional-dependencies]
+voice = [
+    "sounddevice>=0.5.1",
+    "soundfile>=0.12.1",
+]
+qr = [
+    "pyzbar>=0.1.9",
+]
+all = [
+    "sounddevice>=0.5.1",
+    "soundfile>=0.12.1",
+    "pyzbar>=0.1.9",
 ]
 
 [project.urls]

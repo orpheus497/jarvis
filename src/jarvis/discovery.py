@@ -526,9 +526,22 @@ class SimpleDHT:
         """
         Generate 160-bit node ID from UID.
 
-        Uses SHA-1 for 160-bit compatibility with Kademlia standard.
+        Uses SHA-256 truncated to 160 bits (40 hex characters) for compatibility
+        with Kademlia's 160-bit ID space while avoiding SHA-1's cryptographic weaknesses.
+
+        Args:
+            uid: User identifier string
+
+        Returns:
+            160-bit node ID as 40-character hex string
         """
-        return hashlib.sha1(uid.encode()).hexdigest()
+        # Use SHA-256 for security
+        full_hash = hashlib.sha256(uid.encode('utf-8')).hexdigest()
+
+        # Truncate to 160 bits (40 hex chars) for Kademlia compatibility
+        node_id = full_hash[:40]
+
+        return node_id
 
     def _xor_distance(self, id1: str, id2: str) -> int:
         """

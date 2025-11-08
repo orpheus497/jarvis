@@ -2,17 +2,29 @@
 Jarvis - Cross-platform notification system.
 
 Created by orpheus497
+Version: 2.3.0
 
 Provides notifications for incoming messages with platform-specific implementations:
 - Linux: libnotify (notify-send)
 - macOS: osascript (AppleScript)
 - Windows: Windows notification system
 - Termux: termux-notification API
+
+Security: All user-supplied input is sanitized to prevent injection attacks.
 """
 
+import logging
 import os
 import platform
 import subprocess
+
+from .sanitization import (
+    sanitize_for_applescript,
+    sanitize_for_xml,
+    validate_notification_text,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class NotificationManager:
@@ -44,10 +56,14 @@ class NotificationManager:
         """Check if a command exists."""
         try:
             subprocess.run(
-                ["which", command], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+                ["which", command],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+                timeout=5,
             )
             return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
             return False
 
     def notify(self, title: str, message: str, urgency: str = "normal"):
@@ -71,65 +87,135 @@ class NotificationManager:
                 self._notify_windows(title, message)
             elif self.platform == "termux":
                 self._notify_termux(title, message)
-        except Exception:
-            pass  # Silently fail if notification fails
+        except Exception as e:
+            logger.debug(f"Notification failed: {e}", exc_info=True)
 
     def _notify_linux(self, title: str, message: str, urgency: str):
         """Send notification on Linux using notify-send."""
-        subprocess.run(
-            ["notify-send", "-u", urgency, "-i", "mail-unread", "-a", "Jarvis", title, message],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        # Validate inputs
+        title = validate_notification_text(title)
+        message = validate_notification_text(message)
+
+        if not title or not message:
+            logger.debug("Invalid notification text, skipping")
+            return
+
+        # Validate urgency parameter
+        if urgency not in ["low", "normal", "critical"]:
+            urgency = "normal"
+
+        try:
+            # Pass as separate arguments (safer than shell)
+            subprocess.run(
+                ["notify-send", "-u", urgency, "-i", "mail-unread", "-a", "Jarvis", title, message],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug(f"Linux notification failed: {e}")
 
     def _notify_macos(self, title: str, message: str):
         """Send notification on macOS using osascript."""
-        script = f"""
-        display notification "{message}" with title "Jarvis" subtitle "{title}"
-        """
-        subprocess.run(
-            ["osascript", "-e", script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
+        # Validate and sanitize inputs
+        title = validate_notification_text(title)
+        message = validate_notification_text(message)
+
+        if not title or not message:
+            logger.debug("Invalid notification text, skipping")
+            return
+
+        # Sanitize for AppleScript (prevents injection)
+        title_safe = sanitize_for_applescript(title)
+        message_safe = sanitize_for_applescript(message)
+
+        # Use properly escaped AppleScript
+        script = f'display notification "{message_safe}" with title "Jarvis" subtitle "{title_safe}"'
+
+        try:
+            subprocess.run(
+                ["osascript", "-e", script],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug(f"macOS notification failed: {e}")
 
     def _notify_windows(self, title: str, message: str):
         """Send notification on Windows using PowerShell."""
-        # Escape quotes in title and message
-        title = title.replace('"', '""')
-        message = message.replace('"', '""')
+        # Validate and sanitize inputs
+        title = validate_notification_text(title)
+        message = validate_notification_text(message)
 
+        if not title or not message:
+            logger.debug("Invalid notification text, skipping")
+            return
+
+        # XML-escape for toast template (prevents XML injection)
+        title_safe = sanitize_for_xml(title)
+        message_safe = sanitize_for_xml(message)
+
+        # Build XML template with sanitized content
+        template = f"""<toast>
+    <visual>
+        <binding template="ToastText02">
+            <text id="1">{title_safe}</text>
+            <text id="2">{message_safe}</text>
+        </binding>
+    </visual>
+</toast>"""
+
+        # PowerShell script using here-string (safer than f-string)
         script = f"""
-        [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
-        [Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
-        [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+[Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
 
-        $template = @"
-        <toast>
-            <visual>
-                <binding template="ToastText02">
-                    <text id="1">{title}</text>
-                    <text id="2">{message}</text>
-                </binding>
-            </visual>
-        </toast>
-"@
+$template = @'
+{template}
+'@
 
-        $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
-        $xml.LoadXml($template)
-        $toast = New-Object Windows.UI.Notifications.ToastNotification $xml
-        [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Jarvis").Show($toast)
-        """
+$xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+$xml.LoadXml($template)
+$toast = New-Object Windows.UI.Notifications.ToastNotification $xml
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Jarvis").Show($toast)
+"""
 
-        subprocess.run(
-            ["powershell", "-Command", script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
+        try:
+            subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+                check=False,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug(f"Windows notification failed: {e}")
 
     def _notify_termux(self, title: str, message: str):
         """Send notification on Termux using termux-notification."""
-        subprocess.run(
-            ["termux-notification", "--title", title, "--content", message, "--id", "jarvis"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        # Validate inputs
+        title = validate_notification_text(title)
+        message = validate_notification_text(message)
+
+        if not title or not message:
+            logger.debug("Invalid notification text, skipping")
+            return
+
+        try:
+            # Arguments passed separately (safe)
+            subprocess.run(
+                ["termux-notification", "--title", title, "--content", message, "--id", "jarvis"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug(f"Termux notification failed: {e}")
 
     def play_sound(self):
         """Play notification sound."""
@@ -143,6 +229,8 @@ class NotificationManager:
                     ["paplay", "/usr/share/sounds/freedesktop/stereo/message.oga"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    timeout=5,
+                    check=False,
                 )
             elif self.platform == "darwin":
                 # Play macOS system sound
@@ -150,6 +238,8 @@ class NotificationManager:
                     ["afplay", "/System/Library/Sounds/Glass.aiff"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    timeout=5,
+                    check=False,
                 )
             elif self.platform == "windows":
                 # Play Windows system sound
@@ -162,9 +252,11 @@ class NotificationManager:
                     ["termux-notification", "--sound"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    timeout=5,
+                    check=False,
                 )
-        except Exception:
-            pass  # Silently fail if sound fails
+        except Exception as e:
+            logger.debug(f"Notification sound failed: {e}", exc_info=True)
 
 
 # Global notification manager instance
