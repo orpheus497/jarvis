@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2025-11-08
+
 ### Added
 - **QR Code Scanning:** Complete implementation of QR code scanning from image files using pyzbar library
 - pyzbar>=0.1.9 dependency for QR code decoding functionality
