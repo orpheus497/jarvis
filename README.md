@@ -1,10 +1,10 @@
 # Jarvis 🛡️
 
-**Version 2.1.0** - _Terminal-based peer-to-peer end-to-end encrypted messenger with internet connectivity_
+**Version 2.3.0** - _Terminal-based peer-to-peer end-to-end encrypted messenger with internet connectivity_
 
 Created by **orpheus497**.
 
-![Version](https://img.shields.io/badge/version-2.1.0-blue)
+![Version](https://img.shields.io/badge/version-2.3.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)

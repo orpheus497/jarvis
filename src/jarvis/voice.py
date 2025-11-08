@@ -7,7 +7,7 @@ Requires optional dependencies: sounddevice and soundfile.
 Install with: pip install -r requirements-optional.txt
 
 Author: orpheus497
-Version: 2.0.0
+Version: 2.3.0
 """
 
 import logging

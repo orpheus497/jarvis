@@ -1,0 +1,74 @@
+# Jarvis P2P Encrypted Messenger - Docker Compose Configuration
+# Created by orpheus497
+
+version: '3.8'
+
+services:
+  jarvis-server:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile
+    container_name: jarvis-server
+    restart: unless-stopped
+
+    # Port mappings
+    ports:
+      - "5000:5000"    # P2P messaging port
+      - "5999:5999"    # IPC port (localhost only recommended)
+      - "6881:6881"    # DHT port
+
+    # Volume mounts for persistent data
+    volumes:
+      - jarvis-data:/data/jarvis
+      - ./config.toml:/data/jarvis/config.toml:ro  # Optional config file
+
+    # Environment variables
+    environment:
+      - JARVIS_DATA_DIR=/data/jarvis
+      - JARVIS_LOG_LEVEL=INFO
+      - JARVIS_SERVER_PORT=5000
+      - JARVIS_IPC_PORT=5999
+      - JARVIS_DHT_PORT=6881
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "jarvis.server"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Network mode (can be changed to "host" for better P2P connectivity)
+    network_mode: bridge
+
+# Named volumes for data persistence
+volumes:
+  jarvis-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
+
+# Optional: Custom network for isolation
+networks:
+  default:
+    name: jarvis-network
+    driver: bridge

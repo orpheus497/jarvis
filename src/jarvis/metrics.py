@@ -6,7 +6,7 @@ including latency, throughput, packet loss, and provides quality
 indicators for the UI.
 
 Author: orpheus497
-Version: 2.0.0
+Version: 2.3.0
 """
 
 import logging

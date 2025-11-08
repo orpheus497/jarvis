@@ -6,7 +6,7 @@ file transfer management, message search, statistics viewing, configuration
 editing, and backup management.
 
 Author: orpheus497
-Version: 2.0.0
+Version: 2.3.0
 """
 
 import contextlib

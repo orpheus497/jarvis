@@ -6,7 +6,7 @@ including file transfer progress, connection quality indicators,
 and enhanced dialogs.
 
 Author: orpheus497
-Version: 2.0.0
+Version: 2.3.0
 """
 
 from typing import Callable, Dict, List, Optional, Tuple

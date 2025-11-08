@@ -6,7 +6,7 @@ SQLite FTS5 (Full-Text Search). Supports advanced search queries,
 filtering, highlighting, and context retrieval with LRU caching.
 
 Author: orpheus497
-Version: 2.0.0
+Version: 2.3.0
 """
 
 import hashlib

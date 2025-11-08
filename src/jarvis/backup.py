@@ -6,7 +6,7 @@ contacts, groups, and configuration. Supports scheduled backups, rotation,
 restoration, and verification.
 
 Author: orpheus497
-Version: 2.0.0
+Version: 2.3.0
 """
 
 import asyncio

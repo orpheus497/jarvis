@@ -4,7 +4,7 @@ Comprehensive guide for configuring and tuning Jarvis Messenger.
 
 **Created by orpheus497**
 
-**Version:** 2.2.0
+**Version:** 2.3.0
 
 ---
 
@@ -521,6 +521,167 @@ jarvis-cli stats search-cache
 
 # Overall system stats
 jarvis-cli stats all
+```
+
+---
+
+## DHT Bootstrap Configuration
+
+The Distributed Hash Table (DHT) enables peer discovery over the internet without a central server.
+
+### Setting Up Bootstrap Nodes
+
+To use DHT, you need at least one bootstrap node to join the network:
+
+**Option 1: Use existing nodes (if available):**
+```toml
+[dht]
+enabled = true
+port = 6881
+bootstrap_nodes = [
+    ["dht.example.com", 6881],
+    ["192.0.2.100", 6881]
+]
+```
+
+**Option 2: Set up your own bootstrap node:**
+1. Run Jarvis on a server with a static IP
+2. Configure firewall to allow port 6881
+3. Share your IP and port with friends
+4. Everyone adds your node as a bootstrap node
+
+**Option 3: Peer-to-peer bootstrap:**
+- Each user adds their own node as a bootstrap node
+- Share your public IP:port with contacts
+- Gradually builds a distributed network
+
+### DHT Configuration Options
+
+```toml
+[dht]
+# Enable/disable DHT
+enabled = true
+
+# Port for DHT communication
+port = 6881
+
+# Bootstrap nodes (at least one recommended)
+bootstrap_nodes = [
+    ["friend1.ddns.net", 6881],
+    ["192.0.2.50", 6881]
+]
+
+# Number of nodes to replicate data to
+replication_factor = 3
+
+# How often to refresh DHT entries (seconds)
+refresh_interval = 300
+```
+
+### Troubleshooting DHT
+
+**DHT not discovering peers:**
+1. Verify firewall allows port 6881
+2. Check bootstrap nodes are reachable
+3. Ensure at least one bootstrap node configured
+4. Enable DEBUG logging to see DHT activity
+
+**Finding your public IP for DHT:**
+```bash
+# Jarvis will auto-detect via STUN
+# Or manually check:
+curl ifconfig.me
+```
+
+---
+
+## Voice Message Configuration
+
+Voice messages require optional audio dependencies.
+
+### Installing Audio Dependencies
+
+**Linux:**
+```bash
+# Install system audio libraries
+sudo apt-get install portaudio19-dev libsndfile1
+
+# Install Python packages
+pip install sounddevice soundfile
+```
+
+**macOS:**
+```bash
+# Install via Homebrew
+brew install portaudio libsndfile
+
+# Install Python packages
+pip install sounddevice soundfile
+```
+
+**Windows:**
+```bash
+# Python packages (includes binaries)
+pip install sounddevice soundfile
+```
+
+### Enabling Voice Messages
+
+After installing dependencies, enable in config:
+
+```toml
+[features]
+voice_messages = true
+
+[voice]
+max_duration = 300  # 5 minutes
+sample_rate = 44100
+channels = 1  # Mono
+chunk_duration = 10  # seconds
+```
+
+### Voice Configuration Options
+
+```toml
+[voice]
+# Maximum recording duration (seconds)
+max_duration = 300
+
+# Audio quality
+sample_rate = 44100  # 44.1 kHz (CD quality)
+# sample_rate = 22050  # 22 kHz (voice quality, smaller files)
+
+# Channels (1 = mono, 2 = stereo)
+channels = 1
+
+# Chunk size for streaming (seconds)
+chunk_duration = 10
+
+# Audio format for storage
+# format = "FLAC"  # Lossless compression
+# format = "OGG"   # Lossy compression, smaller files
+```
+
+### Troubleshooting Voice Messages
+
+**ImportError: No module named 'sounddevice':**
+```bash
+pip install sounddevice soundfile
+```
+
+**PortAudio library not found:**
+```bash
+# Linux
+sudo apt-get install portaudio19-dev
+
+# macOS
+brew install portaudio
+```
+
+**No audio devices found:**
+```bash
+# List available audio devices
+python -m sounddevice
 ```
 
 ---
