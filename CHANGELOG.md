@@ -126,6 +126,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Debug logging for network writer cleanup failures
 - Path traversal protection via _safe_extract() method in backup restoration
 - Validation for tar member paths to prevent directory escape attacks
+- **NEW:** Comprehensive application metrics and monitoring system (metrics.py)
+  - ApplicationMetrics class for centralized metric collection
+  - Thread-safe counters, gauges, and histograms
+  - Health check monitoring for all components
+  - Historical data retention (60-minute rolling window)
+  - Per-connection quality metrics (latency, throughput, packet loss)
+  - Quality indicators (1-5 bars) based on connection performance
+  - Metric snapshots for trending and analysis
+  - Global singleton pattern for easy access (get_app_metrics())
 
 ### Performance
 - Reduced memory usage in Double Ratchet by removing expired skip keys automatically
