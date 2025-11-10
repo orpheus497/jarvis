@@ -9,11 +9,14 @@ changes to the UI code. Handles async/sync bridging for Textual UI.
 """
 
 import asyncio
+import logging
 from typing import Callable, Dict, List, Optional
 
 from .client import JarvisClient
 from .contact import Contact
 from .group import Group, GroupMember
+
+logger = logging.getLogger(__name__)
 
 
 class ClientAdapter:
