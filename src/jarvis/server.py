@@ -824,7 +824,7 @@ class JarvisServer:
 
         return {"success": True, "count": count}
 
-    async def _handle_get_unread_count(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_get_group_unread_count(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle get group unread count command."""
         if not self.message_store:
             return {"success": False, "error": "Not logged in"}
@@ -1072,7 +1072,7 @@ class JarvisServer:
                     self.group_manager.delete_group(group.group_id)
 
             # Logout
-            self._handle_logout()
+            await self._handle_logout()
 
             return {"success": True}
 
@@ -1617,7 +1617,7 @@ class JarvisServer:
                 self.pid_file.unlink()
                 return False
 
-        except:
+        except Exception:
             return False
 
     def _write_pid_file(self):
@@ -1631,7 +1631,7 @@ class JarvisServer:
         try:
             if self.pid_file.exists():
                 self.pid_file.unlink()
-        except:
+        except Exception:
             pass
 
     def _signal_handler(self, signum, frame):
