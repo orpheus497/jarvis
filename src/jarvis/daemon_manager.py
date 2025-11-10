@@ -73,6 +73,12 @@ class DaemonManager:
                     return False
 
                 pid = int(pid_str)
+
+                # Validate PID is within reasonable bounds
+                if pid <= 0 or pid > 2147483647:  # Max PID on most systems
+                    logger.warning(f"Invalid PID in file: {pid}")
+                    self._cleanup_pid_file()
+                    return False
         except (OSError, ValueError) as e:
             logger.warning(f"Failed to read PID file: {e}")
             self._cleanup_pid_file()
@@ -126,13 +132,22 @@ class DaemonManager:
         logger.info("Starting server daemon...")
 
         try:
+            # Validate parameters to prevent injection
+            if not isinstance(self.ipc_port, int) or self.ipc_port < 1024 or self.ipc_port > 65535:
+                raise ValueError(f"Invalid IPC port: {self.ipc_port}. Must be between 1024-65535")
+
+            # Validate data_dir is a safe path
+            safe_data_dir = Path(self.data_dir).resolve()
+            if not safe_data_dir.exists():
+                raise ValueError(f"Data directory does not exist: {safe_data_dir}")
+
             # Construct command to start server
             cmd = [
                 sys.executable,
                 "-m",
                 "jarvis.server",
                 "--data-dir",
-                str(self.data_dir),
+                str(safe_data_dir),
                 "--ipc-port",
                 str(self.ipc_port),
             ]
@@ -198,12 +213,13 @@ class DaemonManager:
         try:
             # Send SIGTERM for graceful shutdown
             if sys.platform == "win32":
-                # Windows doesn't have SIGTERM, use CTRL_C_EVENT or taskkill
-                try:
-                    os.kill(pid, signal.CTRL_C_EVENT)
-                except AttributeError:
-                    # If CTRL_C_EVENT not available, use taskkill
-                    subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+                # Windows: use taskkill for graceful shutdown (without /F flag)
+                # /T terminates child processes
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/T"],
+                    capture_output=True,
+                    timeout=5
+                )
             else:
                 os.kill(pid, signal.SIGTERM)
 
@@ -369,7 +385,7 @@ class DaemonManager:
             logger.debug(f"Error checking port {port}: {e}")
             return False
         finally:
-            with contextlib.suppress(builtins.BaseException):
+            with contextlib.suppress(Exception):
                 sock.close()
 
     def _can_connect(self, port: int, timeout: float = 1.0) -> bool:
@@ -397,7 +413,7 @@ class DaemonManager:
             logger.debug(f"Error connecting to port {port}: {e}")
             return False
         finally:
-            with contextlib.suppress(builtins.BaseException):
+            with contextlib.suppress(Exception):
                 sock.close()
 
     def _cleanup_pid_file(self):

@@ -136,6 +136,9 @@ class P2PConnection:
         self.on_group_message_callback: Optional[Callable] = None
         self.on_state_change_callback: Optional[Callable] = None
 
+        # Track async callback tasks for proper cleanup
+        self._callback_tasks: Set[asyncio.Task] = set()
+
         self._lock = asyncio.Lock()
 
     def _on_fsm_state_change(self, old_state: FSMState, new_state: FSMState):
@@ -717,6 +720,16 @@ class P2PConnection:
             if self.keepalive_task and not self.keepalive_task.done():
                 self.keepalive_task.cancel()
 
+            # Cancel all pending callback tasks
+            for task in self._callback_tasks:
+                if not task.done():
+                    task.cancel()
+
+            # Wait for callback tasks to complete
+            if self._callback_tasks:
+                await asyncio.gather(*self._callback_tasks, return_exceptions=True)
+            self._callback_tasks.clear()
+
             # Close writer
             if self.writer:
                 try:
@@ -738,6 +751,8 @@ class P2PConnection:
             if asyncio.iscoroutinefunction(self.on_state_change_callback):
                 # Create task with exception handler to prevent silent failures
                 task = asyncio.create_task(self.on_state_change_callback(self.contact.uid, state))
+                self._callback_tasks.add(task)
+                task.add_done_callback(lambda t: self._callback_tasks.discard(t))
                 task.add_done_callback(self._handle_callback_exception)
             else:
                 self.on_state_change_callback(self.contact.uid, state)
@@ -1570,6 +1585,21 @@ class NetworkManager:
 
                 return
 
+            # Verify contact is verified before accepting connection
+            if not contact.verified:
+                # Unverified contact, close the connection
+                writer.close()
+                await writer.wait_closed()
+                logger.warning(
+                    f"Rejected connection from unverified contact: {contact.username}"
+                )
+
+                # Record failed connection attempt
+                if self.security:
+                    await self.security.record_connection_attempt(ip_address, success=False)
+
+                return
+
             # Create a new connection object
             connection = P2PConnection(contact, self.identity, self.my_uid, self.my_username)
             connection.reader = reader
@@ -1622,7 +1652,7 @@ class NetworkManager:
                 # Try to connect if not already connected
                 if contact.uid not in self.connections:
                     logger.info(f"Auto-connecting to discovered peer: {peer.username}")
-                    asyncio.create_task(self.connect(contact.uid))
+                    asyncio.create_task(self.connect_to_peer(contact))
         else:
             logger.info(
                 f"Discovered unknown peer: {peer.username} (fingerprint: {peer.fingerprint[:16]}...)"
