@@ -751,10 +751,11 @@ class JarvisServer:
             "messages": [
                 {
                     "message_id": msg.message_id,
-                    "sender_uid": msg.sender_uid,
-                    "receiver_uid": msg.receiver_uid,
+                    "sender_uid": msg.contact_uid if not msg.sent_by_me else self.identity.uid,
+                    "receiver_uid": self.identity.uid if not msg.sent_by_me else msg.contact_uid,
                     "content": msg.content,
                     "timestamp": msg.timestamp,
+                    "sent_by_me": msg.sent_by_me,
                 }
                 for msg in messages
             ],
@@ -1060,16 +1061,13 @@ class JarvisServer:
 
         try:
             # Delete all data
-            self.identity_manager.delete_identity()
+            self.identity_manager.delete_identity(password)
             if self.contact_manager:
-                for contact in self.contact_manager.get_all_contacts():
-                    self.contact_manager.remove_contact(contact.uid)
+                self.contact_manager.delete_all_contacts()
             if self.message_store:
-                # Message store deletion is handled by identity manager
-                pass
+                self.message_store.delete_all_messages()
             if self.group_manager:
-                for group in self.group_manager.get_all_groups():
-                    self.group_manager.delete_group(group.group_id)
+                self.group_manager.delete_all_groups()
 
             # Logout
             await self._handle_logout()
@@ -1089,7 +1087,9 @@ class JarvisServer:
             return {"success": False, "error": "Missing filepath"}
 
         try:
-            success = self.identity_manager.export_complete_account(self.password, filepath)
+            success = self.identity_manager.export_complete_account(
+                self.password, filepath, self.contact_manager, self.message_store, self.group_manager
+            )
             return {"success": success}
 
         except Exception as e:

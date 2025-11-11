@@ -231,8 +231,19 @@ class MessageStore:
             logger.error(f"Unexpected error saving messages: {e}")
             raise
 
-    def add_message(self, message: Message) -> None:
+    def add_message(
+        self,
+        sender_uid_or_message: any,
+        receiver_uid: Optional[str] = None,
+        content: Optional[str] = None,
+        timestamp: Optional[str] = None,
+        message_id: Optional[str] = None,
+    ) -> None:
         """Add a message to the store with write-behind caching.
+
+        Can be called in two ways:
+        1. add_message(message_object) - Pass a Message object directly
+        2. add_message(sender_uid, receiver_uid, content, timestamp, message_id) - Pass parameters
 
         Messages are batched and saved periodically to reduce I/O:
         - Every MESSAGE_SAVE_BATCH_SIZE messages
@@ -240,8 +251,26 @@ class MessageStore:
         - Or when flush() is called explicitly
 
         Args:
-            message: Message to add
+            sender_uid_or_message: Either a Message object or sender UID
+            receiver_uid: Receiver UID (if using parameter mode)
+            content: Message content (if using parameter mode)
+            timestamp: ISO timestamp (if using parameter mode)
+            message_id: Message ID (if using parameter mode)
         """
+        # Check if first argument is a Message object
+        if isinstance(sender_uid_or_message, Message):
+            message = sender_uid_or_message
+        else:
+            # Create Message object from parameters
+            sender_uid = sender_uid_or_message
+            message = Message(
+                contact_uid=receiver_uid,
+                content=content,
+                sent_by_me=False,  # Incoming message
+                timestamp=timestamp,
+                message_id=message_id,
+            )
+
         self.messages.append(message)
         self._dirty = True
         self._unsaved_count += 1
@@ -258,6 +287,34 @@ class MessageStore:
         # Check if we should save (batch reached or time interval exceeded)
         if self._should_save():
             self.save_messages()
+
+    def add_group_message(
+        self,
+        group_id: str,
+        sender_uid: str,
+        content: str,
+        timestamp: Optional[str] = None,
+        message_id: Optional[str] = None,
+    ) -> None:
+        """Add a group message to the store.
+
+        Args:
+            group_id: Group ID
+            sender_uid: Sender UID
+            content: Message content
+            timestamp: ISO timestamp
+            message_id: Message ID
+        """
+        message = Message(
+            contact_uid=sender_uid,  # For group messages, this is the sender
+            content=content,
+            sent_by_me=False,  # Incoming group message
+            timestamp=timestamp,
+            message_id=message_id,
+            group_id=group_id,
+            sender_uid=sender_uid,
+        )
+        self.add_message(message)
 
     def _should_save(self) -> bool:
         """Check if messages should be saved based on batching rules.
@@ -396,6 +453,10 @@ class MessageStore:
             self.save_messages()
             logger.debug(f"Marked messages from {contact_uid} as read")
 
+    def mark_conversation_read(self, contact_uid: str) -> None:
+        """Alias for mark_as_read() for backward compatibility."""
+        self.mark_as_read(contact_uid)
+
     def mark_group_as_read(self, group_id: str) -> None:
         """Mark all group messages as read."""
         modified = False
@@ -406,6 +467,10 @@ class MessageStore:
         if modified:
             self.save_messages()
             logger.debug(f"Marked messages in group {group_id} as read")
+
+    def mark_group_conversation_read(self, group_id: str) -> None:
+        """Alias for mark_group_as_read() for backward compatibility."""
+        self.mark_group_as_read(group_id)
 
     def get_unread_count(self, contact_uid: str) -> int:
         """Get count of unread direct messages from a contact."""
