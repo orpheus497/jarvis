@@ -34,6 +34,9 @@ from nio import (
     RoomMessageText,
     SyncResponse,
 )
+from nio import (
+    MatrixRoom as NioRoom,
+)
 
 from .constants import (
     FEATURE_MATRIX_PROTOCOL,
@@ -90,8 +93,8 @@ class MatrixMessage:
 
 
 @dataclass
-class MatrixRoom:
-    """Represents a Matrix room."""
+class JarvisMatrixRoom:
+    """Represents a Matrix room in Jarvis."""
 
     room_id: str
     name: str
@@ -144,7 +147,7 @@ class MatrixBackend:
         self.on_room_update_callback: Optional[Callable] = None
 
         # Room cache
-        self._rooms: Dict[str, MatrixRoom] = {}
+        self._rooms: Dict[str, JarvisMatrixRoom] = {}
         self._direct_rooms: Dict[str, str] = {}  # user_id -> room_id mapping
 
         # Track async callback tasks for proper cleanup
@@ -463,11 +466,11 @@ class MatrixBackend:
         except Exception as e:
             logger.debug(f"Error sending typing indicator: {e}")
 
-    def get_rooms(self) -> List[MatrixRoom]:
+    def get_rooms(self) -> List[JarvisMatrixRoom]:
         """Get list of joined rooms."""
         return list(self._rooms.values())
 
-    def get_room(self, room_id: str) -> Optional[MatrixRoom]:
+    def get_room(self, room_id: str) -> Optional[JarvisMatrixRoom]:
         """Get room by ID."""
         return self._rooms.get(room_id)
 
@@ -559,7 +562,7 @@ class MatrixBackend:
         for room_id, room_info in response.rooms.join.items():
             nio_room = self.client.rooms.get(room_id)
             if nio_room:
-                matrix_room = MatrixRoom(
+                matrix_room = JarvisMatrixRoom(
                     room_id=room_id,
                     name=nio_room.display_name or room_id,
                     is_direct=nio_room.is_direct,
@@ -570,7 +573,7 @@ class MatrixBackend:
                 )
                 self._rooms[room_id] = matrix_room
 
-    async def _on_message(self, room: MatrixRoom, event: RoomMessageText) -> None:
+    async def _on_message(self, room: NioRoom, event: RoomMessageText) -> None:
         """Handle incoming message event."""
         # Skip our own messages
         if event.sender == self.config.user_id:
@@ -594,7 +597,7 @@ class MatrixBackend:
             else:
                 self.on_message_callback(message)
 
-    async def _on_invite(self, room: MatrixRoom, event: InviteMemberEvent) -> None:
+    async def _on_invite(self, room: NioRoom, event: InviteMemberEvent) -> None:
         """Handle room invite event."""
         if event.state_key != self.config.user_id:
             return

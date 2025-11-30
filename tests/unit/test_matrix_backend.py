@@ -15,7 +15,7 @@ from jarvis.matrix_backend import (
     MatrixConfig,
     MatrixConnectionState,
     MatrixMessage,
-    MatrixRoom,
+    JarvisMatrixRoom,
     MatrixTransport,
 )
 
@@ -99,12 +99,12 @@ class TestMatrixMessage:
         assert msg.metadata == {}
 
 
-class TestMatrixRoom:
-    """Tests for MatrixRoom dataclass."""
+class TestJarvisMatrixRoom:
+    """Tests for JarvisMatrixRoom dataclass."""
 
     def test_room_creation(self):
-        """Test creating a MatrixRoom."""
-        room = MatrixRoom(
+        """Test creating a JarvisMatrixRoom."""
+        room = JarvisMatrixRoom(
             room_id="!test_room:matrix.org",
             name="Test Room",
             is_direct=False,
@@ -122,8 +122,8 @@ class TestMatrixRoom:
         assert room.unread_count == 5
 
     def test_room_defaults(self):
-        """Test MatrixRoom default values."""
-        room = MatrixRoom(room_id="!room:matrix.org", name="Room")
+        """Test JarvisMatrixRoom default values."""
+        room = JarvisMatrixRoom(room_id="!room:matrix.org", name="Room")
         assert room.is_direct is False
         assert room.is_encrypted is False
         assert room.members == []
