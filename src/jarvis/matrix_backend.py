@@ -1,19 +1,30 @@
 """
-Jarvis - Matrix Protocol Integration Backend.
+Jarvis - Matrix Protocol Primary Communication Backend.
 
 Created by orpheus497
 
-This module provides integration with the Matrix decentralized communication protocol,
-enabling federated, end-to-end encrypted messaging through Matrix homeservers.
+This module provides the PRIMARY communication layer using the Matrix decentralized
+communication protocol. All messaging flows through Matrix as the foundation, with
+P2P direct connections built on top for optimized local communication.
+
+Architecture:
+- Matrix is the PRIMARY transport for all messaging
+- P2P connections are established THROUGH Matrix for direct optimization
+- Contact discovery and room management happen via Matrix
+- Direct P2P connections can be negotiated via Matrix signaling
 
 Matrix protocol features:
 - Decentralized federation: Messages can traverse multiple homeservers
 - End-to-end encryption: Via Olm/Megolm cryptographic ratchets
 - Room-based messaging: Direct chats and group rooms
 - Interoperability: Bridge to other platforms via Matrix bridges
+- P2P Signaling: Coordinate direct connections through Matrix rooms
 
-This backend acts as an alternative transport layer alongside the existing P2P
-network, allowing users to communicate via Matrix homeservers.
+The P2P layer uses Matrix for:
+1. Contact discovery and exchange
+2. Connection negotiation (IP/port exchange)
+3. Fallback messaging when P2P unavailable
+4. Group coordination and membership
 """
 
 import asyncio
@@ -107,7 +118,10 @@ class JarvisMatrixRoom:
 
 class MatrixBackend:
     """
-    Matrix protocol backend for Jarvis Messenger.
+    PRIMARY Matrix protocol backend for Jarvis Messenger.
+
+    This is the MAIN communication layer. All messaging flows through Matrix,
+    with P2P connections built on top for optimized direct communication.
 
     Provides async Matrix client functionality for:
     - User authentication (login/logout)
@@ -115,9 +129,13 @@ class MatrixBackend:
     - Message sending/receiving
     - End-to-end encryption (when available)
     - Real-time sync with homeserver
+    - P2P connection signaling and coordination
 
-    This backend runs alongside the existing P2P network as an alternative
-    transport layer for federated communication.
+    Architecture:
+    - Messages are sent via Matrix by default
+    - P2P connections are negotiated through Matrix rooms
+    - Matrix provides fallback when P2P is unavailable
+    - Contact discovery happens through Matrix
     """
 
     def __init__(self, config: MatrixConfig, data_dir: Optional[Path] = None):
@@ -466,6 +484,138 @@ class MatrixBackend:
         except Exception as e:
             logger.debug(f"Error sending typing indicator: {e}")
 
+    # P2P Signaling Methods - Matrix as the coordination layer for direct connections
+
+    async def send_p2p_offer(
+        self, user_id: str, host: str, port: int, public_key: str
+    ) -> Optional[str]:
+        """
+        Send P2P connection offer via Matrix.
+
+        This allows peers to negotiate direct P2P connections through Matrix,
+        using Matrix as the signaling channel for connection establishment.
+
+        Args:
+            user_id: Target user's Matrix ID
+            host: Our IP address for P2P connection
+            port: Our port for P2P connection
+            public_key: Our public key for verification
+
+        Returns:
+            Event ID if successful, None otherwise
+        """
+        room_id = await self._get_or_create_direct_room(user_id)
+        if not room_id:
+            return None
+
+        # Use namespaced message type following Matrix convention
+        content = {
+            "msgtype": "org.jarvis.p2p.offer",
+            "body": "P2P connection offer",
+            "host": host,
+            "port": port,
+            "public_key": public_key,
+        }
+
+        try:
+            response = await self.client.room_send(
+                room_id=room_id,
+                message_type="m.room.message",
+                content=content,
+            )
+            if hasattr(response, "event_id"):
+                logger.info(f"Sent P2P offer to {user_id}")
+                return response.event_id
+            return None
+        except Exception as e:
+            logger.error(f"Error sending P2P offer: {e}")
+            return None
+
+    async def send_p2p_answer(
+        self, user_id: str, host: str, port: int, public_key: str, accepted: bool
+    ) -> Optional[str]:
+        """
+        Send P2P connection answer via Matrix.
+
+        Args:
+            user_id: Target user's Matrix ID
+            host: Our IP address for P2P connection
+            port: Our port for P2P connection
+            public_key: Our public key for verification
+            accepted: Whether we accept the P2P connection
+
+        Returns:
+            Event ID if successful, None otherwise
+        """
+        room_id = await self._get_or_create_direct_room(user_id)
+        if not room_id:
+            return None
+
+        # Use namespaced message type following Matrix convention
+        content = {
+            "msgtype": "org.jarvis.p2p.answer",
+            "body": "P2P connection answer",
+            "host": host,
+            "port": port,
+            "public_key": public_key,
+            "accepted": accepted,
+        }
+
+        try:
+            response = await self.client.room_send(
+                room_id=room_id,
+                message_type="m.room.message",
+                content=content,
+            )
+            if hasattr(response, "event_id"):
+                logger.info(f"Sent P2P answer to {user_id}: accepted={accepted}")
+                return response.event_id
+            return None
+        except Exception as e:
+            logger.error(f"Error sending P2P answer: {e}")
+            return None
+
+    async def send_p2p_ice_candidate(
+        self, user_id: str, candidate_type: str, address: str, port: int
+    ) -> Optional[str]:
+        """
+        Send ICE candidate for NAT traversal via Matrix.
+
+        Args:
+            user_id: Target user's Matrix ID
+            candidate_type: Type of candidate (host, srflx, relay)
+            address: Candidate IP address
+            port: Candidate port
+
+        Returns:
+            Event ID if successful, None otherwise
+        """
+        room_id = await self._get_or_create_direct_room(user_id)
+        if not room_id:
+            return None
+
+        # Use namespaced message type following Matrix convention
+        content = {
+            "msgtype": "org.jarvis.p2p.ice",
+            "body": "ICE candidate",
+            "candidate_type": candidate_type,
+            "address": address,
+            "port": port,
+        }
+
+        try:
+            response = await self.client.room_send(
+                room_id=room_id,
+                message_type="m.room.message",
+                content=content,
+            )
+            if hasattr(response, "event_id"):
+                return response.event_id
+            return None
+        except Exception as e:
+            logger.error(f"Error sending ICE candidate: {e}")
+            return None
+
     def get_rooms(self) -> List[JarvisMatrixRoom]:
         """Get list of joined rooms."""
         return list(self._rooms.values())
@@ -579,6 +729,15 @@ class MatrixBackend:
         if event.sender == self.config.user_id:
             return
 
+        # Extract metadata from event source for P2P signaling
+        metadata = {}
+        if hasattr(event, "source") and isinstance(event.source, dict):
+            content = event.source.get("content", {})
+            # Extract P2P signaling fields
+            for key in ["host", "port", "public_key", "accepted", "candidate_type", "address"]:
+                if key in content:
+                    metadata[key] = content[key]
+
         message = MatrixMessage(
             event_id=event.event_id,
             room_id=room.room_id,
@@ -587,6 +746,7 @@ class MatrixBackend:
             timestamp=datetime.fromtimestamp(event.server_timestamp / 1000),
             is_encrypted=False,  # Would be True for encrypted rooms
             message_type=event.msgtype,
+            metadata=metadata,
         )
 
         logger.debug(f"Matrix message from {event.sender} in {room.room_id}")
@@ -638,11 +798,16 @@ class MatrixBackend:
 
 class MatrixTransport:
     """
-    Transport layer adapter for integrating Matrix with existing Jarvis messaging.
+    PRIMARY Transport layer for Jarvis messaging via Matrix.
 
-    This class bridges the Matrix backend with the existing Jarvis message
-    handling infrastructure, allowing seamless use of both P2P and Matrix
-    transports.
+    This is the MAIN transport layer. All messages flow through Matrix first.
+    P2P connections are established through Matrix signaling for optimization.
+
+    Architecture:
+    - Matrix is the default and fallback transport
+    - P2P direct connections are negotiated via Matrix
+    - Contact mappings link Jarvis UIDs to Matrix IDs
+    - P2P offers/answers are sent through Matrix rooms
     """
 
     def __init__(self, backend: MatrixBackend, jarvis_uid: str):
@@ -660,11 +825,17 @@ class MatrixTransport:
         self._uid_to_matrix: Dict[str, str] = {}
         self._matrix_to_uid: Dict[str, str] = {}
 
+        # P2P connection state tracking
+        self._p2p_enabled: Dict[str, bool] = {}  # uid -> has P2P connection
+        self._p2p_info: Dict[str, Dict[str, Any]] = {}  # uid -> {host, port, public_key}
+
         # Setup callbacks
         self.backend.on_message_callback = self._handle_matrix_message
 
         # External callbacks
         self.on_message_callback: Optional[Callable] = None
+        self.on_p2p_offer_callback: Optional[Callable] = None
+        self.on_p2p_answer_callback: Optional[Callable] = None
 
     def register_contact(self, jarvis_uid: str, matrix_user_id: str) -> None:
         """
@@ -683,12 +854,14 @@ class MatrixTransport:
         if jarvis_uid in self._uid_to_matrix:
             matrix_id = self._uid_to_matrix.pop(jarvis_uid)
             self._matrix_to_uid.pop(matrix_id, None)
+        self._p2p_enabled.pop(jarvis_uid, None)
+        self._p2p_info.pop(jarvis_uid, None)
 
     async def send_message(
         self, recipient_uid: str, content: str, message_id: str, timestamp: str
     ) -> bool:
         """
-        Send message via Matrix to a registered contact.
+        Send message via Matrix (primary transport).
 
         Args:
             recipient_uid: Jarvis UID of recipient
@@ -707,8 +880,93 @@ class MatrixTransport:
         event_id = await self.backend.send_direct_message(matrix_user_id, content)
         return event_id is not None
 
+    async def initiate_p2p_connection(
+        self, recipient_uid: str, host: str, port: int, public_key: str
+    ) -> bool:
+        """
+        Initiate P2P connection via Matrix signaling.
+
+        Sends P2P offer through Matrix to establish direct connection.
+
+        Args:
+            recipient_uid: Jarvis UID of recipient
+            host: Our IP address
+            port: Our listening port
+            public_key: Our public key
+
+        Returns:
+            True if offer sent successfully
+        """
+        matrix_user_id = self._uid_to_matrix.get(recipient_uid)
+        if not matrix_user_id:
+            logger.warning(f"No Matrix ID for P2P initiation: {recipient_uid}")
+            return False
+
+        event_id = await self.backend.send_p2p_offer(
+            matrix_user_id, host, port, public_key
+        )
+        return event_id is not None
+
+    async def respond_to_p2p_offer(
+        self, recipient_uid: str, host: str, port: int, public_key: str, accepted: bool
+    ) -> bool:
+        """
+        Respond to P2P connection offer via Matrix.
+
+        Args:
+            recipient_uid: Jarvis UID of offerer
+            host: Our IP address
+            port: Our listening port
+            public_key: Our public key
+            accepted: Whether we accept the connection
+
+        Returns:
+            True if response sent successfully
+        """
+        matrix_user_id = self._uid_to_matrix.get(recipient_uid)
+        if not matrix_user_id:
+            return False
+
+        event_id = await self.backend.send_p2p_answer(
+            matrix_user_id, host, port, public_key, accepted
+        )
+        return event_id is not None
+
+    def set_p2p_active(self, jarvis_uid: str, active: bool) -> None:
+        """Mark whether P2P connection is active for a contact."""
+        self._p2p_enabled[jarvis_uid] = active
+
+    def is_p2p_active(self, jarvis_uid: str) -> bool:
+        """Check if P2P connection is active for contact."""
+        return self._p2p_enabled.get(jarvis_uid, False)
+
+    def store_p2p_info(
+        self, jarvis_uid: str, host: str, port: int, public_key: str
+    ) -> None:
+        """Store P2P connection info for a contact."""
+        self._p2p_info[jarvis_uid] = {
+            "host": host,
+            "port": port,
+            "public_key": public_key,
+        }
+
+    def get_p2p_info(self, jarvis_uid: str) -> Optional[Dict[str, Any]]:
+        """Get stored P2P connection info for a contact."""
+        return self._p2p_info.get(jarvis_uid)
+
     async def _handle_matrix_message(self, message: MatrixMessage) -> None:
         """Handle incoming Matrix message and forward to Jarvis."""
+        # Check for P2P signaling messages (using namespaced types)
+        if message.message_type == "org.jarvis.p2p.offer":
+            await self._handle_p2p_offer(message)
+            return
+        elif message.message_type == "org.jarvis.p2p.answer":
+            await self._handle_p2p_answer(message)
+            return
+        elif message.message_type == "org.jarvis.p2p.ice":
+            # Handle ICE candidates for NAT traversal
+            return
+
         # Map Matrix sender to Jarvis UID
         sender_uid = self._matrix_to_uid.get(message.sender)
 
@@ -731,6 +989,50 @@ class MatrixTransport:
                     message.event_id,
                     message.timestamp.isoformat(),
                 )
+
+    async def _handle_p2p_offer(self, message: MatrixMessage) -> None:
+        """Handle incoming P2P connection offer."""
+        sender_uid = self._matrix_to_uid.get(message.sender)
+        if not sender_uid:
+            return
+
+        # Extract P2P info from message metadata
+        host = message.metadata.get("host")
+        port = message.metadata.get("port")
+        public_key = message.metadata.get("public_key")
+
+        if host and port and public_key:
+            self.store_p2p_info(sender_uid, host, port, public_key)
+
+            if self.on_p2p_offer_callback:
+                if asyncio.iscoroutinefunction(self.on_p2p_offer_callback):
+                    await self.on_p2p_offer_callback(sender_uid, host, port, public_key)
+                else:
+                    self.on_p2p_offer_callback(sender_uid, host, port, public_key)
+
+    async def _handle_p2p_answer(self, message: MatrixMessage) -> None:
+        """Handle P2P connection answer."""
+        sender_uid = self._matrix_to_uid.get(message.sender)
+        if not sender_uid:
+            return
+
+        host = message.metadata.get("host")
+        port = message.metadata.get("port")
+        public_key = message.metadata.get("public_key")
+        accepted = message.metadata.get("accepted", False)
+
+        if host and port and public_key and accepted:
+            self.store_p2p_info(sender_uid, host, port, public_key)
+
+            if self.on_p2p_answer_callback:
+                if asyncio.iscoroutinefunction(self.on_p2p_answer_callback):
+                    await self.on_p2p_answer_callback(
+                        sender_uid, host, port, public_key, accepted
+                    )
+                else:
+                    self.on_p2p_answer_callback(
+                        sender_uid, host, port, public_key, accepted
+                    )
 
     def is_contact_on_matrix(self, jarvis_uid: str) -> bool:
         """Check if contact has Matrix mapping."""

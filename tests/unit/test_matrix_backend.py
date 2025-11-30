@@ -290,6 +290,36 @@ class TestMatrixBackendAsync:
         # Should not raise
         await backend.send_typing("!room:matrix.org", True)
 
+    async def test_send_p2p_offer_when_not_connected(self, temp_dir):
+        """Test send_p2p_offer returns None when not connected."""
+        config = MatrixConfig()
+        backend = MatrixBackend(config, data_dir=temp_dir)
+
+        result = await backend.send_p2p_offer(
+            "@user:matrix.org", "192.168.1.1", 5000, "public_key_here"
+        )
+        assert result is None
+
+    async def test_send_p2p_answer_when_not_connected(self, temp_dir):
+        """Test send_p2p_answer returns None when not connected."""
+        config = MatrixConfig()
+        backend = MatrixBackend(config, data_dir=temp_dir)
+
+        result = await backend.send_p2p_answer(
+            "@user:matrix.org", "192.168.1.1", 5000, "public_key_here", True
+        )
+        assert result is None
+
+    async def test_send_p2p_ice_candidate_when_not_connected(self, temp_dir):
+        """Test send_p2p_ice_candidate returns None when not connected."""
+        config = MatrixConfig()
+        backend = MatrixBackend(config, data_dir=temp_dir)
+
+        result = await backend.send_p2p_ice_candidate(
+            "@user:matrix.org", "host", "192.168.1.1", 5000
+        )
+        assert result is None
+
 
 @pytest.mark.asyncio
 class TestMatrixTransportAsync:
@@ -305,3 +335,86 @@ class TestMatrixTransportAsync:
             "unknown_uid", "Hello", "msg_id_123", "2025-01-01T00:00:00"
         )
         assert result is False
+
+    async def test_initiate_p2p_connection_no_mapping(self, temp_dir):
+        """Test initiate_p2p_connection returns False when contact not mapped."""
+        config = MatrixConfig()
+        backend = MatrixBackend(config, data_dir=temp_dir)
+        transport = MatrixTransport(backend, jarvis_uid="test_uid")
+
+        result = await transport.initiate_p2p_connection(
+            "unknown_uid", "192.168.1.1", 5000, "public_key"
+        )
+        assert result is False
+
+    async def test_respond_to_p2p_offer_no_mapping(self, temp_dir):
+        """Test respond_to_p2p_offer returns False when contact not mapped."""
+        config = MatrixConfig()
+        backend = MatrixBackend(config, data_dir=temp_dir)
+        transport = MatrixTransport(backend, jarvis_uid="test_uid")
+
+        result = await transport.respond_to_p2p_offer(
+            "unknown_uid", "192.168.1.1", 5000, "public_key", True
+        )
+        assert result is False
+
+
+class TestMatrixTransportP2P:
+    """Tests for MatrixTransport P2P functionality."""
+
+    def test_set_p2p_active(self, temp_dir):
+        """Test setting P2P active state."""
+        config = MatrixConfig()
+        backend = MatrixBackend(config, data_dir=temp_dir)
+        transport = MatrixTransport(backend, jarvis_uid="test_uid")
+
+        transport.set_p2p_active("contact_uid", True)
+        assert transport.is_p2p_active("contact_uid") is True
+
+        transport.set_p2p_active("contact_uid", False)
+        assert transport.is_p2p_active("contact_uid") is False
+
+    def test_is_p2p_active_default(self, temp_dir):
+        """Test is_p2p_active returns False by default."""
+        config = MatrixConfig()
+        backend = MatrixBackend(config, data_dir=temp_dir)
+        transport = MatrixTransport(backend, jarvis_uid="test_uid")
+
+        assert transport.is_p2p_active("unknown_uid") is False
+
+    def test_store_and_get_p2p_info(self, temp_dir):
+        """Test storing and retrieving P2P connection info."""
+        config = MatrixConfig()
+        backend = MatrixBackend(config, data_dir=temp_dir)
+        transport = MatrixTransport(backend, jarvis_uid="test_uid")
+
+        transport.store_p2p_info("contact_uid", "192.168.1.100", 5000, "public_key_xyz")
+        
+        info = transport.get_p2p_info("contact_uid")
+        assert info is not None
+        assert info["host"] == "192.168.1.100"
+        assert info["port"] == 5000
+        assert info["public_key"] == "public_key_xyz"
+
+    def test_get_p2p_info_not_found(self, temp_dir):
+        """Test get_p2p_info returns None when not found."""
+        config = MatrixConfig()
+        backend = MatrixBackend(config, data_dir=temp_dir)
+        transport = MatrixTransport(backend, jarvis_uid="test_uid")
+
+        assert transport.get_p2p_info("unknown_uid") is None
+
+    def test_unregister_clears_p2p_state(self, temp_dir):
+        """Test unregistering contact clears P2P state."""
+        config = MatrixConfig()
+        backend = MatrixBackend(config, data_dir=temp_dir)
+        transport = MatrixTransport(backend, jarvis_uid="test_uid")
+
+        transport.register_contact("contact_uid", "@user:matrix.org")
+        transport.set_p2p_active("contact_uid", True)
+        transport.store_p2p_info("contact_uid", "192.168.1.100", 5000, "key")
+
+        transport.unregister_contact("contact_uid")
+
+        assert transport.is_p2p_active("contact_uid") is False
+        assert transport.get_p2p_info("contact_uid") is None
