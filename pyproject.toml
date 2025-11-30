@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jarvis-messenger"
-version = "2.4.0"
-description = "Terminal-based peer-to-peer end-to-end encrypted messenger with internet connectivity"
+version = "2.5.0"
+description = "Terminal-based messenger with Matrix as primary transport and P2P direct connections for optimized communication"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
     {name = "orpheus497"}
 ]
-keywords = ["messenger", "p2p", "encryption", "security", "privacy", "e2e", "terminal", "cli", "nat-traversal"]
+keywords = ["messenger", "p2p", "encryption", "security", "privacy", "e2e", "terminal", "cli", "nat-traversal", "matrix", "decentralized", "federation", "e2ee"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",

@@ -123,19 +123,65 @@ Jarvis relies on the following free and open-source software (FOSS) dependencies
 - **Upstream**: https://github.com/python-zeroconf/python-zeroconf
 - **Website**: https://python-zeroconf.readthedocs.io/
 
+## Matrix Protocol (Primary Transport)
+
+### matrix-nio
+- **License**: ISC
+- **Description**: Python Matrix client library with async support
+- **Upstream**: https://github.com/poljar/matrix-nio
+- **Website**: https://matrix-nio.readthedocs.io/
+- **Note**: Primary communication layer for Jarvis v2.5.0+
+
+### python-olm (Optional, for E2EE)
+- **License**: Apache-2.0
+- **Description**: Python bindings for Olm/Megolm encryption library
+- **Upstream**: https://gitlab.matrix.org/matrix-org/olm
+- **Website**: https://gitlab.matrix.org/matrix-org/olm/-/tree/master/python
+- **Note**: Required for Matrix end-to-end encryption support
+
+### peewee (Optional, for E2EE)
+- **License**: MIT
+- **Description**: Lightweight ORM for Python (used by matrix-nio for encrypted sessions)
+- **Upstream**: https://github.com/coleifer/peewee
+- **Website**: http://docs.peewee-orm.com/
+
+### cachetools (Optional, for E2EE)
+- **License**: MIT
+- **Description**: Extensible memoizing collections and decorators
+- **Upstream**: https://github.com/tkem/cachetools
+- **Website**: https://cachetools.readthedocs.io/
+
+### atomicwrites (Optional, for E2EE)
+- **License**: MIT
+- **Description**: Atomic file writes for Python
+- **Upstream**: https://github.com/untitaker/python-atomicwrites
+- **Website**: https://github.com/untitaker/python-atomicwrites
+
 ## License Summary
 
 All dependencies are free and open-source software (FOSS) with permissive licenses:
 
-- **MIT**: textual, rich, argon2-cffi, liboqs-python, tomli, validators, pystun3, pyzbar, sounddevice
-- **Apache-2.0**: cryptography (dual), aiofiles
+- **MIT**: textual, rich, argon2-cffi, liboqs-python, tomli, validators, pystun3, pyzbar, sounddevice, peewee, cachetools, atomicwrites
+- **Apache-2.0**: cryptography (dual), aiofiles, python-olm
 - **BSD-3-Clause**: pyperclip, zstandard, qrcode, soundfile, miniupnpc, cryptography (dual)
+- **ISC**: matrix-nio
 - **LGPL-2.1**: zeroconf
 - **HPND/PIL**: Pillow
 
 ## Standards and Protocols
 
 Jarvis implements industry-standard cryptographic protocols and best practices:
+
+### Communication Standards
+
+- **Matrix Protocol** - Decentralized, federated communication protocol
+  - Specification: https://spec.matrix.org/
+  - Matrix.org Foundation: https://matrix.org/
+  - Used as PRIMARY transport layer in Jarvis v2.5.0+
+
+- **Olm/Megolm** - End-to-end encryption for Matrix
+  - Specification: https://gitlab.matrix.org/matrix-org/olm/blob/master/docs/olm.md
+  - Megolm specification: https://gitlab.matrix.org/matrix-org/olm/blob/master/docs/megolm.md
 
 ### Cryptographic Standards
 

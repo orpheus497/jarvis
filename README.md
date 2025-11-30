@@ -184,6 +184,8 @@ The application features a terminal-based UI with real-time connection status, m
 
 **Requirements:** Python 3.8 or higher
 
+### Basic Installation
+
 ```bash
 # Install from source
 git clone https://github.com/orpheus497/jarvisapp.git
@@ -194,11 +196,70 @@ pip install .
 jarvis
 ```
 
-All dependencies are installed automatically.
+### Installation with Matrix E2E Encryption Support
+
+```bash
+# Install with Matrix end-to-end encryption support (Olm/Megolm)
+pip install .[matrix-e2ee]
+
+# Or install all optional features
+pip install .[all]
+```
+
+### Installation Options
+
+| Option | Command | Description |
+|--------|---------|-------------|
+| Basic | `pip install .` | Core Matrix + P2P functionality |
+| Matrix E2EE | `pip install .[matrix-e2ee]` | Add Olm/Megolm encryption |
+| Voice | `pip install .[voice]` | Add voice message support |
+| QR Codes | `pip install .[qr]` | Add QR code scanning |
+| All Features | `pip install .[all]` | All optional features |
+
+All core dependencies (including Matrix support) are installed automatically with basic installation.
 
 **Data Storage:**
 - **Linux/macOS:** `~/.jarvis/`
 - **Windows:** `%APPDATA%\Jarvis\`
+- **Matrix Data:** `~/.jarvis/matrix/` (session data, sync tokens)
+
+---
+
+## Matrix Protocol Configuration
+
+Jarvis uses Matrix as its primary communication layer. Configuration options:
+
+### Default Matrix Settings
+
+| Setting | Default Value | Description |
+|---------|---------------|-------------|
+| Homeserver | `https://matrix.org` | Matrix homeserver URL |
+| Device Name | `Jarvis Messenger` | Device name shown in Matrix |
+| Sync Timeout | 30000ms | Sync request timeout |
+| Auto Join | `True` | Auto-join rooms on invite |
+| E2EE Enabled | `True` | Enable end-to-end encryption |
+
+### Using a Custom Homeserver
+
+You can use any Matrix homeserver (matrix.org, Element, self-hosted, etc.):
+
+```python
+from jarvis.matrix_backend import MatrixBackend, MatrixConfig
+
+config = MatrixConfig(
+    homeserver_url="https://your.homeserver.org",
+    e2ee_enabled=True,
+    auto_join=True,
+)
+backend = MatrixBackend(config)
+```
+
+### Self-Hosted Matrix Server
+
+For maximum privacy, you can run your own Matrix homeserver:
+- **Synapse**: https://github.com/matrix-org/synapse
+- **Dendrite**: https://github.com/matrix-org/dendrite
+- **Conduit**: https://conduit.rs/
 
 ---
 
@@ -372,22 +433,65 @@ When you start Jarvis:
 1. The system checks if a server is already running
 2. If not, it automatically starts a background server process
 3. The UI connects to the server via local IPC (port 5999)
-4. Server authenticates you and maintains P2P connections
+4. Server authenticates you and maintains Matrix + P2P connections
 5. You can close the UI, and connections remain active in the background
 
 ### Network Architecture
 
-Jarvis uses direct peer-to-peer TCP connections. When you add a contact, you provide their IP address and port. The background server then performs the following steps:
+Jarvis uses a **Matrix-first architecture** where Matrix is the primary communication layer:
 
-1.  Establishes a TCP connection to the contact's IP:port
-2.  Exchanges X25519 public keys
-3.  Verifies the contact's fingerprint
-4.  Derives five independent session keys using HKDF
-5.  Begins encrypted communication
+**Primary Layer (Matrix):**
+1.  Connects to Matrix homeserver (default: matrix.org)
+2.  Authenticates user and syncs rooms
+3.  All messages flow through Matrix by default
+4.  Provides reliable, federated communication
+5.  Handles contact discovery and key exchange
 
-**No cloud servers. No intermediaries. No third parties.**
+**Optimization Layer (P2P):**
+1.  P2P connection offers sent via Matrix signaling
+2.  Peers exchange IP/port/public_key through Matrix rooms
+3.  Direct TCP connection established after negotiation
+4.  P2P used for optimized local communication
+5.  Falls back to Matrix if P2P unavailable
 
-The background server maintains these P2P connections continuously, ensuring your contacts can reach you at any time without requiring the UI to be open.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    JARVIS ARCHITECTURE                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │              MATRIX PROTOCOL (PRIMARY)               │   │
+│   │  • Decentralized federation via homeservers          │   │
+│   │  • E2EE via Olm/Megolm                               │   │
+│   │  • Room-based messaging                              │   │
+│   │  • P2P signaling (org.jarvis.p2p.offer/answer/ice)  │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │           P2P DIRECT CONNECTIONS (OPTIMIZATION)      │   │
+│   │  • Direct TCP connections for local optimization     │   │
+│   │  • NAT traversal (UPnP, STUN)                       │   │
+│   │  • Five-layer encryption                             │   │
+│   │  • Automatic reconnection                            │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Decentralized. Federated. Private.**
+
+Messages can traverse multiple Matrix homeservers, providing true decentralized communication without any single point of failure.
+
+### P2P Connection Negotiation via Matrix
+
+When Jarvis wants to establish a direct P2P connection:
+
+1.  **Send P2P Offer:** Via Matrix room with `org.jarvis.p2p.offer` message type
+2.  **Exchange Connection Info:** Host, port, and public key sent through Matrix
+3.  **Receive P2P Answer:** Peer responds with their connection info
+4.  **Establish Direct Connection:** TCP connection using exchanged details
+5.  **Fallback:** If P2P fails, communication continues via Matrix
 
 ### Encryption Process
 
