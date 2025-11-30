@@ -1,15 +1,15 @@
 # Jarvis 🛡️
 
-**Version 2.3.0** - _Terminal-based peer-to-peer end-to-end encrypted messenger with internet connectivity_
+**Version 2.5.0** - _Terminal-based peer-to-peer end-to-end encrypted messenger with Matrix federation support_
 
 Created by **orpheus497**.
 
-![Version](https://img.shields.io/badge/version-2.3.0-blue)
+![Version](https://img.shields.io/badge/version-2.5.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)
 
-Jarvis is a cross-platform terminal-based messenger that provides complete privacy through peer-to-peer direct connections with automatic NAT traversal for internet messaging. Your messages never pass through any server, are never stored in the cloud, and are protected by five layers of military-grade encryption.
+Jarvis is a cross-platform terminal-based messenger that provides complete privacy through peer-to-peer direct connections with automatic NAT traversal for internet messaging. Now with Matrix protocol integration for decentralized federated communication. Your messages never pass through any server, are never stored in the cloud, and are protected by five layers of military-grade encryption.
 
 ```
 ░        ░░░      ░░░       ░░░  ░░░░  ░░        ░░░      ░░
@@ -19,7 +19,7 @@ Jarvis is a cross-platform terminal-based messenger that provides complete priva
 ██      ███  ████  ██  ████  █████  █████        ███      ██
 ```
 
-Jarvis provides complete privacy through end-to-end encryption with forward secrecy, direct peer-to-peer connections with automatic NAT traversal, offline message queuing, peer discovery, and rich communication features including file transfer, voice messages, and group chat.
+Jarvis provides complete privacy through end-to-end encryption with forward secrecy, direct peer-to-peer connections with automatic NAT traversal, offline message queuing, peer discovery, Matrix protocol federation, and rich communication features including file transfer, voice messages, and group chat.
 
 ---
 
@@ -33,6 +33,7 @@ Your conversations remain completely under your control.
 *   **No Servers Required:** Direct peer-to-peer connections using TCP sockets.
 *   **Internet Ready:** Automatic NAT traversal with UPnP/STUN for connections over the internet.
 *   **Supreme Encryption:** Five-layer encryption alternating AES-256-GCM and ChaCha20-Poly1305.
+*   **Decentralized:** Optional Matrix protocol support for federated communication.
 
 ---
 
@@ -62,6 +63,24 @@ Your conversations remain completely under your control.
     *   IP whitelisting/blacklisting
     *   Connection limits per IP
     *   Rate limiting
+
+### 🔗 Matrix Protocol Integration (NEW in v2.5.0)
+
+*   **Decentralized Federation:** Connect via any Matrix homeserver
+    *   Communicate across different servers
+    *   No single point of failure
+    *   Choose your own homeserver or self-host
+*   **End-to-End Encryption:** Via Olm/Megolm cryptographic ratchets
+    *   Optional E2EE with python-olm
+    *   Secure key verification
+    *   Cross-signed device verification
+*   **Interoperability:** Bridge to other platforms
+    *   Connect with Element, FluffyChat, and other Matrix clients
+    *   Use existing Matrix bridges for Slack, Discord, IRC, etc.
+*   **Room-Based Communication:** Flexible messaging
+    *   Direct 1:1 encrypted chats
+    *   Group rooms with E2EE
+    *   Room history and search
 
 ### 🔐 Security
 
@@ -678,6 +697,10 @@ All dependencies are included and installed automatically:
 *   **validators** - Input validation (MIT)
 *   **aiofiles** - Async file I/O (Apache-2.0)
 
+**Matrix Protocol:**
+*   **matrix-nio** - Async Matrix client library (ISC)
+*   **python-olm** - Olm/Megolm encryption bindings (Apache-2.0) - optional for E2EE
+
 ### Standards and Protocols
 
 This project implements industry-standard cryptographic protocols and best practices:
@@ -719,6 +742,14 @@ This project implements industry-standard cryptographic protocols and best pract
 *   **mDNS/DNS-SD** - Multicast DNS Service Discovery (RFC 6762/6763)  
     IETF standard for zero-configuration networking  
     https://tools.ietf.org/html/rfc6762
+
+*   **Matrix Protocol** - Decentralized communication standard  
+    Open standard for real-time interoperable decentralized communication  
+    https://spec.matrix.org/
+
+*   **Olm/Megolm** - Double ratchet encryption for Matrix  
+    End-to-end encryption implementation for Matrix protocol  
+    https://matrix.org/docs/olm/
 
 ### Inspiration
 

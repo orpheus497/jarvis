@@ -180,3 +180,15 @@ FEATURE_ENHANCED_SECURITY = True  # v2.1.0
 FEATURE_CONNECTION_POOLING = True  # Connection pooling improvements (v2.3.0)
 FEATURE_MESSAGE_BATCHING = True  # Message batch processing
 FEATURE_SEARCH_CACHING = True  # Search result caching (v2.3.0)
+FEATURE_MATRIX_PROTOCOL = True  # Matrix protocol integration (v2.5.0)
+
+# Matrix Protocol Constants (v2.5.0)
+MATRIX_DEFAULT_HOMESERVER = "https://matrix.org"
+MATRIX_DEVICE_NAME = "Jarvis Messenger"
+MATRIX_SYNC_TIMEOUT = 30000  # milliseconds
+MATRIX_RETRY_ATTEMPTS = 3
+MATRIX_RETRY_DELAY = 5  # seconds
+MATRIX_ROOM_HISTORY_LIMIT = 100
+MATRIX_E2EE_ENABLED = True  # End-to-end encryption via Olm/Megolm
+MATRIX_AUTO_JOIN = True  # Auto-join on invite
+MATRIX_TYPING_TIMEOUT = 30000  # milliseconds

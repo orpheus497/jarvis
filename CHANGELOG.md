@@ -7,7 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.5.0] - 2025-11-08
+## [2.5.0] - 2025-11-30
+
+### Added
+- **Matrix Protocol Integration:** Full integration with the Matrix decentralized communication protocol
+  - MatrixBackend class for connecting to Matrix homeservers
+  - MatrixTransport adapter for bridging with existing Jarvis messaging
+  - Support for Matrix user authentication (password and access token)
+  - Room management (create, join, leave)
+  - Direct and group messaging via Matrix rooms
+  - Real-time sync with Matrix homeservers
+  - Optional end-to-end encryption support via Olm/Megolm (python-olm required)
+  - Auto-join on invite (configurable)
+  - Typing indicators support
+- **Matrix Configuration Constants:** New constants in constants.py for Matrix protocol
+  - MATRIX_DEFAULT_HOMESERVER, MATRIX_DEVICE_NAME, MATRIX_SYNC_TIMEOUT
+  - MATRIX_RETRY_ATTEMPTS, MATRIX_RETRY_DELAY, MATRIX_E2EE_ENABLED
+  - MATRIX_AUTO_JOIN, MATRIX_TYPING_TIMEOUT
+  - FEATURE_MATRIX_PROTOCOL feature flag
+- **Matrix Dependencies:** matrix-nio>=0.25.0 for async Matrix client
+  - Optional python-olm, peewee, cachetools, atomicwrites for E2EE support
+  - Install E2EE extras via `pip install jarvis-messenger[matrix-e2ee]`
+
+### Changed
+- Version updated to 2.5.0 across all documentation
+- README updated with Matrix protocol feature section
+- requirements.txt updated with matrix-nio dependency
+- pyproject.toml updated with matrix-nio dependency and optional E2EE dependencies
 
 ### Security
 - **CRITICAL:** Fixed nonce reuse vulnerability in file transfer encryption (file_transfer.py)
