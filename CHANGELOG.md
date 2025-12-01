@@ -7,7 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.5.0] - 2025-11-08
+## [2.5.0] - 2025-11-30
+
+### Added
+- **Matrix Protocol as Primary Transport:** Matrix is now the PRIMARY communication layer
+  - All messaging flows through Matrix by default
+  - P2P direct connections are negotiated through Matrix signaling
+  - Matrix provides reliable fallback when P2P unavailable
+  - Contact discovery happens through Matrix
+  - Group coordination via Matrix rooms
+- **MatrixBackend Class:** Full-featured async Matrix client implementation
+  - `connect()` - Connect to Matrix homeserver with username/password
+  - `connect_with_token()` - Connect using existing access token
+  - `disconnect()` - Gracefully disconnect from homeserver
+  - `send_message()` - Send text message to any room
+  - `send_direct_message()` - Send direct message to a user (auto-creates room)
+  - `create_room()` - Create new Matrix rooms (direct or group)
+  - `join_room()` - Join existing rooms by ID or alias
+  - `leave_room()` - Leave a room
+  - `send_typing()` - Send typing indicators
+  - `get_rooms()` / `get_room()` - Room cache access
+  - `is_connected()` - Connection state checking
+  - Real-time sync loop with automatic retry and error handling
+- **P2P Signaling via Matrix:** Coordinate direct P2P connections through Matrix rooms
+  - `send_p2p_offer()` - Send P2P connection offer with host/port/public_key
+  - `send_p2p_answer()` - Respond to P2P connection offer
+  - `send_p2p_ice_candidate()` - Exchange ICE candidates for NAT traversal
+  - Uses namespaced message types: `org.jarvis.p2p.offer`, `org.jarvis.p2p.answer`, `org.jarvis.p2p.ice`
+- **MatrixTransport Class:** Adapter bridging Matrix with Jarvis messaging
+  - `register_contact()` / `unregister_contact()` - Map Jarvis UIDs to Matrix IDs
+  - `send_message()` - Send message via Matrix transport
+  - `initiate_p2p_connection()` - Start P2P negotiation via Matrix signaling
+  - `respond_to_p2p_offer()` - Accept/reject P2P connection offers
+  - `set_p2p_active()` / `is_p2p_active()` - Track P2P connection state
+  - `store_p2p_info()` / `get_p2p_info()` - Store P2P connection information
+  - `is_contact_on_matrix()` - Check if contact has Matrix mapping
+  - `get_matrix_id()` / `get_jarvis_uid()` - Bidirectional ID lookup
+  - Callbacks: `on_message_callback`, `on_p2p_offer_callback`, `on_p2p_answer_callback`
+- **MatrixConfig Dataclass:** Configuration for Matrix connections
+  - `homeserver_url` - Matrix homeserver URL (default: https://matrix.org)
+  - `user_id` - Matrix user ID (@user:server.org)
+  - `access_token` - Authentication token
+  - `device_id` / `device_name` - Device identification
+  - `store_path` - Path for session data storage
+  - `e2ee_enabled` - Enable end-to-end encryption
+  - `auto_join` - Automatically join rooms on invite
+  - `sync_timeout` - Sync request timeout
+- **Data Classes:** Structured data models for Matrix entities
+  - `MatrixMessage` - Message representation with metadata support
+  - `JarvisMatrixRoom` - Room representation with member tracking
+  - `MatrixConnectionState` - Connection state enumeration
+- **Matrix Protocol Constants:** New constants in constants.py
+  - `FEATURE_MATRIX_PROTOCOL = True` - Feature flag
+  - `MATRIX_PRIMARY_TRANSPORT = True` - Matrix as primary transport
+  - `MATRIX_P2P_SIGNALING = True` - Enable P2P signaling via Matrix
+  - `MATRIX_DEFAULT_HOMESERVER = "https://matrix.org"`
+  - `MATRIX_DEVICE_NAME = "Jarvis Messenger"`
+  - `MATRIX_SYNC_TIMEOUT = 30000` (milliseconds)
+  - `MATRIX_RETRY_ATTEMPTS = 3`
+  - `MATRIX_RETRY_DELAY = 5` (seconds)
+  - `MATRIX_ROOM_HISTORY_LIMIT = 100`
+  - `MATRIX_E2EE_ENABLED = True`
+  - `MATRIX_AUTO_JOIN = True`
+  - `MATRIX_TYPING_TIMEOUT = 30000` (milliseconds)
+- **Matrix Dependencies:** matrix-nio>=0.25.0 for async Matrix client
+  - Optional python-olm, peewee, cachetools, atomicwrites for E2EE support
+  - Install E2EE extras via `pip install jarvis-messenger[matrix-e2ee]`
+- **Comprehensive Test Suite:** 35 unit tests for Matrix backend
+  - Configuration tests
+  - Connection state tests
+  - Message and room data class tests
+  - Backend initialization and state tests
+  - Transport layer tests
+  - P2P signaling tests
+  - Async operation tests
+
+### Changed
+- **Architecture Refactored:** Matrix is now the PRIMARY communication layer
+  - P2P connections are now an optimization layer built on Matrix
+  - All messaging flows through Matrix by default
+  - P2P connections negotiated through Matrix signaling
+- Version updated to 2.5.0 across all documentation
+- README completely rewritten with Matrix-first architecture documentation
+- requirements.txt updated with matrix-nio dependency
+- pyproject.toml updated with:
+  - Version 2.5.0
+  - Updated description reflecting Matrix-first architecture
+  - Added Matrix-related keywords
+  - matrix-nio dependency and optional E2EE dependencies
+- docs/DEPENDENCIES.md updated with Matrix protocol dependencies and standards
 
 ### Security
 - **CRITICAL:** Fixed nonce reuse vulnerability in file transfer encryption (file_transfer.py)

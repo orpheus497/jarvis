@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jarvis-messenger"
-version = "2.4.0"
-description = "Terminal-based peer-to-peer end-to-end encrypted messenger with internet connectivity"
+version = "2.5.0"
+description = "Terminal-based messenger with Matrix as primary transport and P2P direct connections for optimized communication"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
     {name = "orpheus497"}
 ]
-keywords = ["messenger", "p2p", "encryption", "security", "privacy", "e2e", "terminal", "cli", "nat-traversal"]
+keywords = ["messenger", "p2p", "encryption", "security", "privacy", "e2e", "terminal", "cli", "nat-traversal", "matrix", "decentralized", "federation", "e2ee"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
@@ -44,6 +44,7 @@ dependencies = [
     "zeroconf>=0.131.0",
     "validators>=0.22.0",
     "aiofiles>=23.2.1",
+    "matrix-nio>=0.25.0",
 ]
 
 [project.optional-dependencies]
@@ -54,10 +55,20 @@ voice = [
 qr = [
     "pyzbar>=0.1.9",
 ]
+matrix-e2ee = [
+    "python-olm>=3.2.0",
+    "peewee>=3.17.0",
+    "cachetools>=5.3.0",
+    "atomicwrites>=1.4.0",
+]
 all = [
     "sounddevice>=0.5.1",
     "soundfile>=0.12.1",
     "pyzbar>=0.1.9",
+    "python-olm>=3.2.0",
+    "peewee>=3.17.0",
+    "cachetools>=5.3.0",
+    "atomicwrites>=1.4.0",
 ]
 
 [project.urls]

@@ -1,15 +1,15 @@
 # Jarvis 🛡️
 
-**Version 2.3.0** - _Terminal-based peer-to-peer end-to-end encrypted messenger with internet connectivity_
+**Version 2.5.0** - _Terminal-based messenger with Matrix as primary transport and P2P direct connections_
 
 Created by **orpheus497**.
 
-![Version](https://img.shields.io/badge/version-2.3.0-blue)
+![Version](https://img.shields.io/badge/version-2.5.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)
 
-Jarvis is a cross-platform terminal-based messenger that provides complete privacy through peer-to-peer direct connections with automatic NAT traversal for internet messaging. Your messages never pass through any server, are never stored in the cloud, and are protected by five layers of military-grade encryption.
+Jarvis is a cross-platform terminal-based messenger that uses the **Matrix protocol as its primary communication layer**, with P2P direct connections built on top for optimized local communication. Matrix provides decentralized federation, while P2P connections are negotiated through Matrix for maximum efficiency and reliability.
 
 ```
 ░        ░░░      ░░░       ░░░  ░░░░  ░░        ░░░      ░░
@@ -19,7 +19,19 @@ Jarvis is a cross-platform terminal-based messenger that provides complete priva
 ██      ███  ████  ██  ████  █████  █████        ███      ██
 ```
 
-Jarvis provides complete privacy through end-to-end encryption with forward secrecy, direct peer-to-peer connections with automatic NAT traversal, offline message queuing, peer discovery, and rich communication features including file transfer, voice messages, and group chat.
+Jarvis provides complete privacy through Matrix's end-to-end encryption (Olm/Megolm), with the ability to establish direct P2P connections for optimized local communication. The architecture ensures messages can always be delivered via Matrix, with P2P as an optimization layer.
+
+---
+
+## Architecture
+
+**Matrix is the PRIMARY communication layer:**
+
+1. **Matrix First:** All messaging flows through Matrix by default
+2. **P2P Optimization:** Direct P2P connections are negotiated through Matrix rooms
+3. **Fallback Guarantee:** Matrix provides reliable fallback when P2P unavailable
+4. **Contact Discovery:** Matrix handles contact discovery and key exchange
+5. **Group Coordination:** Matrix rooms coordinate group membership and messages
 
 ---
 
@@ -27,20 +39,40 @@ Jarvis provides complete privacy through end-to-end encryption with forward secr
 
 Your conversations remain completely under your control.
 
-*   **No Cloud:** Messages are transmitted directly between peers, never stored on servers.
+*   **Decentralized:** Matrix protocol provides federated, decentralized communication.
 *   **No Tracking:** No analytics, no tracking pixels, no telemetry of any kind.
-*   **Total Privacy:** Only you and your contacts can read your messages.
-*   **No Servers Required:** Direct peer-to-peer connections using TCP sockets.
-*   **Internet Ready:** Automatic NAT traversal with UPnP/STUN for connections over the internet.
-*   **Supreme Encryption:** Five-layer encryption alternating AES-256-GCM and ChaCha20-Poly1305.
+*   **Total Privacy:** End-to-end encryption via Olm/Megolm cryptographic ratchets.
+*   **P2P Optimization:** Direct connections established through Matrix signaling.
+*   **Internet Ready:** Works across the internet via Matrix homeservers.
+*   **Supreme Encryption:** Multiple layers of encryption for defense in depth.
+*   **Federation:** Connect with any Matrix-compatible client or server.
 
 ---
 
 ## Features
 
-### 🌐 Internet Connectivity
+### 🔗 Matrix Protocol (PRIMARY)
 
-*   **Automatic NAT Traversal:** Connect over the internet without manual port forwarding
+*   **Decentralized Federation:** Connect via any Matrix homeserver
+    *   Communicate across different servers
+    *   No single point of failure
+    *   Choose your own homeserver or self-host
+*   **End-to-End Encryption:** Via Olm/Megolm cryptographic ratchets
+    *   Optional E2EE with python-olm
+    *   Secure key verification
+    *   Cross-signed device verification
+*   **P2P Signaling:** Negotiate direct connections through Matrix
+    *   Send P2P offers/answers via Matrix rooms
+    *   Exchange connection info securely
+    *   ICE candidate exchange for NAT traversal
+*   **Room-Based Communication:** Flexible messaging
+    *   Direct 1:1 encrypted chats
+    *   Group rooms with E2EE
+    *   Room history and search
+
+### 🌐 P2P Direct Connections (OPTIMIZATION LAYER)
+
+*   **Automatic NAT Traversal:** Connect directly when possible
     *   UPnP IGD automatic port mapping
     *   STUN protocol for public IP discovery  
     *   NAT type detection (7 types supported)
@@ -152,6 +184,8 @@ The application features a terminal-based UI with real-time connection status, m
 
 **Requirements:** Python 3.8 or higher
 
+### Basic Installation
+
 ```bash
 # Install from source
 git clone https://github.com/orpheus497/jarvisapp.git
@@ -162,11 +196,70 @@ pip install .
 jarvis
 ```
 
-All dependencies are installed automatically.
+### Installation with Matrix E2E Encryption Support
+
+```bash
+# Install with Matrix end-to-end encryption support (Olm/Megolm)
+pip install .[matrix-e2ee]
+
+# Or install all optional features
+pip install .[all]
+```
+
+### Installation Options
+
+| Option | Command | Description |
+|--------|---------|-------------|
+| Basic | `pip install .` | Core Matrix + P2P functionality |
+| Matrix E2EE | `pip install .[matrix-e2ee]` | Add Olm/Megolm encryption |
+| Voice | `pip install .[voice]` | Add voice message support |
+| QR Codes | `pip install .[qr]` | Add QR code scanning |
+| All Features | `pip install .[all]` | All optional features |
+
+All core dependencies (including Matrix support) are installed automatically with basic installation.
 
 **Data Storage:**
 - **Linux/macOS:** `~/.jarvis/`
 - **Windows:** `%APPDATA%\Jarvis\`
+- **Matrix Data:** `~/.jarvis/matrix/` (session data, sync tokens)
+
+---
+
+## Matrix Protocol Configuration
+
+Jarvis uses Matrix as its primary communication layer. Configuration options:
+
+### Default Matrix Settings
+
+| Setting | Default Value | Description |
+|---------|---------------|-------------|
+| Homeserver | `https://matrix.org` | Matrix homeserver URL |
+| Device Name | `Jarvis Messenger` | Device name shown in Matrix |
+| Sync Timeout | 30000ms | Sync request timeout |
+| Auto Join | `True` | Auto-join rooms on invite |
+| E2EE Enabled | `True` | Enable end-to-end encryption |
+
+### Using a Custom Homeserver
+
+You can use any Matrix homeserver (matrix.org, Element, self-hosted, etc.):
+
+```python
+from jarvis.matrix_backend import MatrixBackend, MatrixConfig
+
+config = MatrixConfig(
+    homeserver_url="https://your.homeserver.org",
+    e2ee_enabled=True,
+    auto_join=True,
+)
+backend = MatrixBackend(config)
+```
+
+### Self-Hosted Matrix Server
+
+For maximum privacy, you can run your own Matrix homeserver:
+- **Synapse**: https://github.com/matrix-org/synapse
+- **Dendrite**: https://github.com/matrix-org/dendrite
+- **Conduit**: https://conduit.rs/
 
 ---
 
@@ -340,22 +433,65 @@ When you start Jarvis:
 1. The system checks if a server is already running
 2. If not, it automatically starts a background server process
 3. The UI connects to the server via local IPC (port 5999)
-4. Server authenticates you and maintains P2P connections
+4. Server authenticates you and maintains Matrix + P2P connections
 5. You can close the UI, and connections remain active in the background
 
 ### Network Architecture
 
-Jarvis uses direct peer-to-peer TCP connections. When you add a contact, you provide their IP address and port. The background server then performs the following steps:
+Jarvis uses a **Matrix-first architecture** where Matrix is the primary communication layer:
 
-1.  Establishes a TCP connection to the contact's IP:port
-2.  Exchanges X25519 public keys
-3.  Verifies the contact's fingerprint
-4.  Derives five independent session keys using HKDF
-5.  Begins encrypted communication
+**Primary Layer (Matrix):**
+1.  Connects to Matrix homeserver (default: matrix.org)
+2.  Authenticates user and syncs rooms
+3.  All messages flow through Matrix by default
+4.  Provides reliable, federated communication
+5.  Handles contact discovery and key exchange
 
-**No cloud servers. No intermediaries. No third parties.**
+**Optimization Layer (P2P):**
+1.  P2P connection offers sent via Matrix signaling
+2.  Peers exchange IP/port/public_key through Matrix rooms
+3.  Direct TCP connection established after negotiation
+4.  P2P used for optimized local communication
+5.  Falls back to Matrix if P2P unavailable
 
-The background server maintains these P2P connections continuously, ensuring your contacts can reach you at any time without requiring the UI to be open.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    JARVIS ARCHITECTURE                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │              MATRIX PROTOCOL (PRIMARY)               │   │
+│   │  • Decentralized federation via homeservers          │   │
+│   │  • E2EE via Olm/Megolm                               │   │
+│   │  • Room-based messaging                              │   │
+│   │  • P2P signaling (org.jarvis.p2p.offer/answer/ice)  │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │           P2P DIRECT CONNECTIONS (OPTIMIZATION)      │   │
+│   │  • Direct TCP connections for local optimization     │   │
+│   │  • NAT traversal (UPnP, STUN)                       │   │
+│   │  • Five-layer encryption                             │   │
+│   │  • Automatic reconnection                            │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Decentralized. Federated. Private.**
+
+Messages can traverse multiple Matrix homeservers, providing true decentralized communication without any single point of failure.
+
+### P2P Connection Negotiation via Matrix
+
+When Jarvis wants to establish a direct P2P connection:
+
+1.  **Send P2P Offer:** Via Matrix room with `org.jarvis.p2p.offer` message type
+2.  **Exchange Connection Info:** Host, port, and public key sent through Matrix
+3.  **Receive P2P Answer:** Peer responds with their connection info
+4.  **Establish Direct Connection:** TCP connection using exchanged details
+5.  **Fallback:** If P2P fails, communication continues via Matrix
 
 ### Encryption Process
 
@@ -678,6 +814,10 @@ All dependencies are included and installed automatically:
 *   **validators** - Input validation (MIT)
 *   **aiofiles** - Async file I/O (Apache-2.0)
 
+**Matrix Protocol:**
+*   **matrix-nio** - Async Matrix client library (ISC)
+*   **python-olm** - Olm/Megolm encryption bindings (Apache-2.0) - optional for E2EE
+
 ### Standards and Protocols
 
 This project implements industry-standard cryptographic protocols and best practices:
@@ -719,6 +859,14 @@ This project implements industry-standard cryptographic protocols and best pract
 *   **mDNS/DNS-SD** - Multicast DNS Service Discovery (RFC 6762/6763)  
     IETF standard for zero-configuration networking  
     https://tools.ietf.org/html/rfc6762
+
+*   **Matrix Protocol** - Decentralized communication standard  
+    Open standard for real-time interoperable decentralized communication  
+    https://spec.matrix.org/
+
+*   **Olm/Megolm** - Double ratchet encryption for Matrix  
+    End-to-end encryption implementation for Matrix protocol  
+    https://matrix.org/docs/olm/
 
 ### Inspiration
 
