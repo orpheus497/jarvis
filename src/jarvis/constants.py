@@ -5,11 +5,11 @@ This module defines all constants used throughout the Jarvis application.
 All magic numbers and configuration defaults are centralized here.
 
 Author: orpheus497
-Version: 2.4.0
+Version: 2.5.0
 """
 
 # Version Information
-VERSION = "2.4.0"
+VERSION = "2.5.0"
 APP_NAME = "Jarvis"
 AUTHOR = "orpheus497"
 
