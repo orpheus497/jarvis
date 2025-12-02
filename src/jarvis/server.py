@@ -546,7 +546,7 @@ class JarvisServer:
                     return {"success": False, "error": "Invalid password"}
 
             # Initialize managers
-            self.identity_manager = IdentityManager(str(self.data_dir))
+            self.identity_manager = IdentityManager(str(self.data_dir / "identity.enc"))
 
             # Check if identity exists
             if not self.identity_manager.has_identity():

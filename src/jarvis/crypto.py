@@ -78,6 +78,10 @@ class IdentityKeyPair:
             encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
         )
 
+    def get_public_key_base64(self) -> str:
+        """Get public key as base64-encoded string."""
+        return base64.b64encode(self.get_public_key_bytes()).decode("utf-8")
+
     def get_private_key_bytes(self) -> bytes:
         """Get private key as raw bytes."""
         return self.private_key.private_bytes(
