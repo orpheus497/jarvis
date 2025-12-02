@@ -111,11 +111,25 @@ class MessageQueue:
                     attempts INTEGER DEFAULT 0,
                     last_attempt REAL,
                     next_retry REAL NOT NULL,
-                    expires_at REAL NOT NULL,
-                    INDEX idx_recipient (recipient_uid),
-                    INDEX idx_expires (expires_at),
-                    INDEX idx_next_retry (next_retry)
+                    expires_at REAL NOT NULL
                 )
+            """
+            )
+
+            # Create indices separately (SQLite requires separate CREATE INDEX statements)
+            cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_recipient ON queued_messages (recipient_uid)
+            """
+            )
+            cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_expires ON queued_messages (expires_at)
+            """
+            )
+            cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_next_retry ON queued_messages (next_retry)
             """
             )
 
@@ -492,3 +506,51 @@ class MessageQueue:
     def __del__(self):
         """Cleanup on destruction."""
         self.close()
+
+    # Async wrappers for use in async context (network.py)
+
+    async def get_queued_for_recipient(self, recipient_uid: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Async wrapper to get queued messages for a recipient as dictionaries.
+
+        Args:
+            recipient_uid: Recipient's UID
+            limit: Maximum messages to return
+
+        Returns:
+            List of message dictionaries with queue_id and message_data
+        """
+        messages = self.dequeue(recipient_uid, limit)
+        result = []
+        for msg in messages:
+            try:
+                result.append({
+                    "queue_id": msg.queue_id,
+                    "recipient_uid": msg.recipient_uid,
+                    "sender_uid": msg.sender_uid,
+                    "message_type": msg.message_type,
+                    "message_data": json.loads(msg.message_data),
+                    "timestamp": msg.timestamp,
+                    "attempts": msg.attempts,
+                })
+            except json.JSONDecodeError:
+                logger.error(f"Failed to decode message data for queue_id {msg.queue_id}")
+        return result
+
+    async def enqueue_async(
+        self, recipient_uid: str, sender_uid: str, message_type: str, message_data: Dict[str, Any]
+    ) -> bool:
+        """Async wrapper for enqueue method."""
+        return self.enqueue(recipient_uid, sender_uid, message_type, message_data)
+
+    async def mark_delivered_async(self, queue_id: int) -> bool:
+        """Async wrapper for mark_delivered method."""
+        return self.mark_delivered(queue_id)
+
+    async def mark_failed_async(self, queue_id: int) -> bool:
+        """Async wrapper for mark_failed method."""
+        return self.mark_failed(queue_id)
+
+    async def cleanup_expired_async(self) -> int:
+        """Async wrapper for cleanup_expired method."""
+        return self.cleanup_expired()

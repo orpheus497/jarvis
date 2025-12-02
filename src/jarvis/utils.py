@@ -107,15 +107,16 @@ def validate_ip(ip: str, allow_private: bool = True, allow_loopback: bool = Fals
     try:
         ip_obj = ipaddress.ip_address(ip)
 
-        # Reject loopback addresses (127.0.0.0/8, ::1) unless explicitly allowed
-        if not allow_loopback and ip_obj.is_loopback:
-            return False
+        # Handle loopback addresses (127.0.0.0/8, ::1)
+        if ip_obj.is_loopback:
+            # Return True if loopback is explicitly allowed, False otherwise
+            return allow_loopback
 
         # Reject unspecified addresses (0.0.0.0, ::)
         if ip_obj.is_unspecified:
             return False
 
-        # Reject reserved addresses
+        # Reject reserved addresses (except loopback which is handled above)
         if ip_obj.is_reserved:
             return False
 
@@ -145,11 +146,19 @@ def validate_hostname(hostname: str) -> bool:
     Returns:
         True if valid hostname, False otherwise
     """
+    # Empty hostnames are invalid
+    if not hostname:
+        return False
+
     if len(hostname) > 255:
         return False
 
     if hostname[-1] == ".":
         hostname = hostname[:-1]
+
+    # Check again after stripping trailing dot
+    if not hostname:
+        return False
 
     pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
     return bool(re.match(pattern, hostname))
