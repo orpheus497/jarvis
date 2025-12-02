@@ -20,7 +20,6 @@ import hashlib
 import hmac
 import json
 import logging
-import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path

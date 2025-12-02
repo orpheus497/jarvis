@@ -636,7 +636,7 @@ class ApplicationMetrics:
         """
         with self.lock:
             histograms = {}
-            for name in self.histograms.keys():
+            for name in self.histograms:
                 stats = self.get_histogram_stats(name)
                 if stats:
                     histograms[name] = stats

@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .constants import (
-    SEARCH_CACHE_CLEANUP_INTERVAL,
     SEARCH_CACHE_MAX_SIZE,
     SEARCH_CACHE_TTL,
     SEARCH_CONTEXT_LINES,

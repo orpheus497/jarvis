@@ -9,7 +9,7 @@ Author: orpheus497
 Version: 2.3.0
 """
 
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional
 
 from rich.table import Table
 from rich.text import Text
