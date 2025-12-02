@@ -115,7 +115,7 @@ def validate_ip(ip: str, allow_private: bool = True, allow_loopback: bool = Fals
         if ip_obj.is_unspecified:
             return False
 
-        # Reject reserved addresses
+        # Reject reserved addresses (except loopback which is handled above)
         if ip_obj.is_reserved:
             return False
 
@@ -145,11 +145,19 @@ def validate_hostname(hostname: str) -> bool:
     Returns:
         True if valid hostname, False otherwise
     """
-    if not hostname or len(hostname) > 255:
+    # Empty hostnames are invalid
+    if not hostname:
+        return False
+
+    if len(hostname) > 255:
         return False
 
     if hostname[-1] == ".":
         hostname = hostname[:-1]
+
+    # Check again after stripping trailing dot
+    if not hostname:
+        return False
 
     pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
     return bool(re.match(pattern, hostname))

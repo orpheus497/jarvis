@@ -1223,7 +1223,7 @@ class NetworkManager:
         # Cleanup message queue
         if self.message_queue:
             try:
-                await self.message_queue.cleanup_expired()
+                await self.message_queue.cleanup_expired_async()
                 logger.info("Message queue cleaned up")
             except Exception as e:
                 logger.warning(f"Error cleaning up message queue: {e}")
@@ -1371,7 +1371,7 @@ class NetworkManager:
             # Peer is offline, queue message
             if self.message_queue:
                 logger.info(f"Peer {uid[:8]} is offline, queueing message {message_id[:8]}")
-                success = await self.message_queue.enqueue(
+                success = await self.message_queue.enqueue_async(
                     recipient_uid=uid,
                     sender_uid=self.my_uid,
                     message_type="text",
@@ -1690,21 +1690,21 @@ class NetworkManager:
 
                 if success:
                     # Mark as delivered
-                    await self.message_queue.mark_delivered(msg["queue_id"])
+                    await self.message_queue.mark_delivered_async(msg["queue_id"])
                     logger.info(f"Delivered queued message {msg['queue_id']} to {uid[:8]}")
 
                     # Track successful delivery of queued message
                     metrics.increment_counter("messages.delivered")
                 else:
                     # Mark as failed, will retry later
-                    await self.message_queue.mark_failed(msg["queue_id"])
+                    await self.message_queue.mark_failed_async(msg["queue_id"])
                     logger.warning(
                         f"Failed to deliver queued message {msg['queue_id']} to {uid[:8]}"
                     )
 
             except Exception as e:
                 logger.error(f"Error delivering queued message to {uid[:8]}: {e}")
-                await self.message_queue.mark_failed(msg["queue_id"])
+                await self.message_queue.mark_failed_async(msg["queue_id"])
 
     async def disconnect_all(self):
         """Disconnect from all peers."""

@@ -190,3 +190,8 @@ def sanitize_for_xml(text: str) -> str:
 def sanitize_for_display(text: str) -> str:
     """Convenience function for display sanitization."""
     return _sanitizer.sanitize_for_display(text)
+
+
+def validate_notification_text(text: str) -> Optional[str]:
+    """Convenience function for notification text validation."""
+    return _sanitizer.validate_notification_text(text)

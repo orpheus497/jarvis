@@ -175,6 +175,10 @@ class IdentityManager:
         """Check if identity file exists."""
         return os.path.exists(self.identity_file)
 
+    def has_identity(self) -> bool:
+        """Alias for identity_exists() for backward compatibility."""
+        return self.identity_exists()
+
     def update_listen_port(self, port: int, password: str):
         """Update listen port and save."""
         if self.identity:
