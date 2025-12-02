@@ -22,7 +22,7 @@ import logging
 import struct
 import time
 from pathlib import Path
-from typing import Callable, Dict, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Optional, Set, Tuple
 
 from . import crypto, protocol
 from .connection_fsm import ConnectionEvent, ConnectionStateMachine

@@ -107,9 +107,9 @@ def validate_ip(ip: str, allow_private: bool = True, allow_loopback: bool = Fals
     try:
         ip_obj = ipaddress.ip_address(ip)
 
-        # Reject loopback addresses (127.0.0.0/8, ::1) unless explicitly allowed
-        if not allow_loopback and ip_obj.is_loopback:
-            return False
+        # Handle loopback addresses (127.0.0.0/8, ::1) - check before reserved
+        if ip_obj.is_loopback:
+            return allow_loopback
 
         # Reject unspecified addresses (0.0.0.0, ::)
         if ip_obj.is_unspecified:
@@ -145,7 +145,7 @@ def validate_hostname(hostname: str) -> bool:
     Returns:
         True if valid hostname, False otherwise
     """
-    if len(hostname) > 255:
+    if not hostname or len(hostname) > 255:
         return False
 
     if hostname[-1] == ".":

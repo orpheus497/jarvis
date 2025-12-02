@@ -10,6 +10,7 @@ This module implements peer discovery via mDNS (local network) and a simple DHT
 import asyncio
 import contextlib
 import hashlib
+import json
 import logging
 import socket
 import time
@@ -598,7 +599,7 @@ class SimpleDHT:
             )
         return added
 
-    def find_closest_nodes(self, target_id: str, count: int = None) -> List[Dict[str, Any]]:
+    def find_closest_nodes(self, target_id: str, count: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Find the closest nodes to a target ID.
 
@@ -773,10 +774,8 @@ class SimpleDHT:
         # Cancel maintenance task
         if self.maintenance_task:
             self.maintenance_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self.maintenance_task
-            except asyncio.CancelledError:
-                pass
 
         logger.info("Kademlia DHT node stopped")
 

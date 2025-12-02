@@ -262,7 +262,9 @@ class MessageStore:
             message = sender_uid_or_message
         else:
             # Create Message object from parameters
-            sender_uid = sender_uid_or_message
+            # Note: For incoming messages, receiver_uid is used as contact_uid
+            # to maintain consistency with existing message storage format
+            _sender_uid = sender_uid_or_message  # kept for debugging
             message = Message(
                 contact_uid=receiver_uid,
                 content=content,

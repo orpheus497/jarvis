@@ -422,7 +422,7 @@ class RatchetSession:
         current_time = time.time()
         expired_keys = []
 
-        for skip_key, (message_key, timestamp) in self.state.skipped_keys.items():
+        for skip_key, (_message_key, timestamp) in self.state.skipped_keys.items():
             if current_time - timestamp > RATCHET_MESSAGE_KEY_LIFETIME:
                 expired_keys.append(skip_key)
 

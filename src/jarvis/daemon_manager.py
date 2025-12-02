@@ -7,7 +7,6 @@ This module manages the Jarvis server daemon lifecycle independently of the UI.
 It provides reliable server detection, startup, shutdown, and health monitoring.
 """
 
-import builtins
 import contextlib
 import logging
 import os
