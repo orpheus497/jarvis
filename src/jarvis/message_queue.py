@@ -540,17 +540,35 @@ class MessageQueue:
     async def enqueue_async(
         self, recipient_uid: str, sender_uid: str, message_type: str, message_data: Dict[str, Any]
     ) -> bool:
-        """Async wrapper for enqueue method."""
+        """
+        Async wrapper for enqueue method.
+
+        Note: The underlying SQLite operations are synchronous. For high-throughput
+        scenarios, consider using asyncio.to_thread() or an async database library.
+        SQLite operations are typically fast enough that blocking is minimal.
+        """
         return self.enqueue(recipient_uid, sender_uid, message_type, message_data)
 
     async def mark_delivered_async(self, queue_id: int) -> bool:
-        """Async wrapper for mark_delivered method."""
+        """
+        Async wrapper for mark_delivered method.
+
+        Note: Uses synchronous SQLite under the hood. See enqueue_async for details.
+        """
         return self.mark_delivered(queue_id)
 
     async def mark_failed_async(self, queue_id: int) -> bool:
-        """Async wrapper for mark_failed method."""
+        """
+        Async wrapper for mark_failed method.
+
+        Note: Uses synchronous SQLite under the hood. See enqueue_async for details.
+        """
         return self.mark_failed(queue_id)
 
     async def cleanup_expired_async(self) -> int:
-        """Async wrapper for cleanup_expired method."""
+        """
+        Async wrapper for cleanup_expired method.
+
+        Note: Uses synchronous SQLite under the hood. See enqueue_async for details.
+        """
         return self.cleanup_expired()

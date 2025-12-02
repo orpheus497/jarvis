@@ -109,7 +109,7 @@ def validate_ip(ip: str, allow_private: bool = True, allow_loopback: bool = Fals
 
         # Handle loopback addresses (127.0.0.0/8, ::1)
         if ip_obj.is_loopback:
-            # Return True if loopback is explicitly allowed, False otherwise
+            # Allow loopback only if explicitly enabled
             return allow_loopback
 
         # Reject unspecified addresses (0.0.0.0, ::)
